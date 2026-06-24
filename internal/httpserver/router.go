@@ -1,3 +1,4 @@
+// Package httpserver contains HTTP server setup and routing.
 package httpserver
 
 import (

@@ -1,3 +1,4 @@
+// Package guilds contains guild models, handlers, and database access.
 package guilds
 
 import "time"

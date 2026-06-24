@@ -1,3 +1,4 @@
+// Package auth contains authentication handlers, JWT helpers, and middleware.
 package auth
 
 import "context"

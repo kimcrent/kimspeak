@@ -1,3 +1,4 @@
+// Package users contains user models and database access.
 package users
 
 import "time"
