@@ -170,7 +170,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, ok := userIDFromContext(r.Context())
+	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": "unauthorized",
