@@ -57,3 +57,41 @@ func (r *Repository) Create(ctx context.Context, name string, ownerID string) (G
 
 	return guild, nil
 }
+
+func (r *Repository) FindByUserID(ctx context.Context, userID string) ([]Guild, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT g.id, g.name, g.owner_id, g.created_at, g.updated_at
+		FROM guilds g
+		JOIN guild_members gm ON gm.guild_id = g.id
+		WHERE gm.user_id = $1
+		ORDER BY g.created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	guilds := make([]Guild, 0)
+
+	for rows.Next() {
+		var guild Guild
+
+		err := rows.Scan(
+			&guild.ID,
+			&guild.Name,
+			&guild.OwnerID,
+			&guild.CreatedAt,
+			&guild.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		guilds = append(guilds, guild)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return guilds, nil
+}

@@ -24,7 +24,7 @@ func (s *Server) NewRouter() http.Handler {
 	mux.HandleFunc("/auth/register", authHandler.Register)
 	mux.HandleFunc("/auth/login", authHandler.Login)
 	mux.Handle("/me", authHandler.AuthMiddleware(http.HandlerFunc(authHandler.Me)))
-	mux.Handle("/guilds", authHandler.AuthMiddleware(http.HandlerFunc(guildsHandler.Create)))
+	mux.Handle("/guilds", authHandler.AuthMiddleware(http.HandlerFunc(guildsHandler.HandleGuilds)))
 
 	return mux
 }

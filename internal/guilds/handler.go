@@ -23,7 +23,24 @@ type createGuildRequest struct {
 }
 
 type createGuildResponse struct {
-	Guild Guild `json:"guild"`
+	Guild Guild `json:"guilds"`
+}
+
+type listGuildsResponse struct {
+	Guilds []Guild `json:"guilds"`
+}
+
+func (h *Handler) HandleGuilds(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		h.Create(w, r)
+	case http.MethodGet:
+		h.List(w, r)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"error": "method not allowed",
+		})
+	}
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -78,4 +95,30 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"error": "method not allowed",
+		})
+		return
+	}
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
+		return
+	}
+	guilds, err := h.guildsRepo.FindByUserID(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "faild to get guilds",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, listGuildsResponse{
+		Guilds: guilds,
+	})
 }
