@@ -95,3 +95,35 @@ func (r *Repository) FindByUserID(ctx context.Context, userID string) ([]Guild, 
 	}
 	return guilds, nil
 }
+
+func (r *Repository) IsMember(ctx context.Context, guildID string, userID string) (bool, error) {
+	var exists bool
+
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM guild_members
+			WHERE guild_id = $1 AND user_id = $2
+		)
+	`, guildID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (r *Repository) IsOwner(ctx context.Context, guildID string, userID string) (bool, error) {
+	var exists bool
+
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+		SELECT 1
+		FROM guild_members
+		WHERE guild_id = $1 AND user_id = $2 AND role = 'owner'
+		)
+	`, guildID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}

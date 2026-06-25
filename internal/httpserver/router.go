@@ -21,7 +21,7 @@ func (s *Server) NewRouter() http.Handler {
 	guildsRepository := guilds.NewRepository(s.db)
 	guildsHandler := guilds.NewHandler(guildsRepository)
 	channelsRepository := channels.NewRepository(s.db)
-	channelsHandler := channels.NewHandler(channelsRepository)
+	channelsHandler := channels.NewHandler(channelsRepository, guildsRepository)
 
 	mux.HandleFunc("GET /health", healthHandler.Check)
 	mux.HandleFunc("/auth/register", authHandler.Register)

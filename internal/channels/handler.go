@@ -6,15 +6,18 @@ import (
 	"strings"
 
 	"github.com/kimcrent/kimspeak/internal/auth"
+	"github.com/kimcrent/kimspeak/internal/guilds"
 )
 
 type Handler struct {
 	channelsRepo *Repository
+	guildsRepo   *guilds.Repository
 }
 
-func NewHandler(channelsRepo *Repository) *Handler {
+func NewHandler(channelsRepo *Repository, guildsRepo *guilds.Repository) *Handler {
 	return &Handler{
 		channelsRepo: channelsRepo,
+		guildsRepo:   guildsRepo,
 	}
 }
 
@@ -46,7 +49,7 @@ func (h *Handler) HandleChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	_, ok := auth.UserIDFromContext(r.Context())
+	userID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": "unauthorized",
@@ -85,6 +88,21 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isOwner, err := h.guildsRepo.IsOwner(r.Context(), req.GuildID, userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to check permissions",
+		})
+		return
+	}
+
+	if !isOwner {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "only guild owner can create channels",
+		})
+		return
+	}
+
 	channel, err := h.channelsRepo.Create(r.Context(), req.GuildID, req.Name, req.Type)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
@@ -99,7 +117,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	_, ok := auth.UserIDFromContext(r.Context())
+	userID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": "unauthorized",
@@ -111,6 +129,21 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if guildID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": "guild_id is required",
+		})
+		return
+	}
+
+	isMember, err := h.guildsRepo.IsMember(r.Context(), guildID, userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to check permissions",
+		})
+		return
+	}
+
+	if !isMember {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "you are not a member of this guild",
 		})
 		return
 	}
