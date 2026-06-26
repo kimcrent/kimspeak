@@ -42,7 +42,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createMessageRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "inavalid request body", http.StatusBadRequest)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
