@@ -1,3 +1,4 @@
+// Handler for channels
 package channels
 
 import (
