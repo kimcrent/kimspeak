@@ -1,3 +1,4 @@
+// Package messages contains handlers and repository logic for channel messages.
 package messages
 
 import (
@@ -7,15 +8,18 @@ import (
 	"strings"
 
 	"github.com/kimcrent/kimspeak/internal/auth"
+	"github.com/kimcrent/kimspeak/internal/guildmembers"
 )
 
 type Handler struct {
-	repo *Repository
+	repo             *Repository
+	guildMembersRepo *guildmembers.Repository
 }
 
-func NewHandler(repo *Repository) *Handler {
+func NewHandler(repo *Repository, guildMembersRepo *guildmembers.Repository) *Handler {
 	return &Handler{
-		repo: repo,
+		repo:             repo,
+		guildMembersRepo: guildMembersRepo,
 	}
 }
 
@@ -39,6 +43,18 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	canAccess, err := h.guildMembersRepo.CanAccessChannel(r.Context(), channelID, authorID)
+	if err != nil {
+		http.Error(w, "failed to chaeck permissions", http.StatusInternalServerError)
+		return
+	}
+
+	if !canAccess {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	var req createMessageRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,6 +86,23 @@ func (h *Handler) ListByChannel(w http.ResponseWriter, r *http.Request) {
 	channelID := r.PathValue("channel_id")
 	if channelID == "" {
 		http.Error(w, "channel_id is requered", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok || userID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	canAccess, err := h.guildMembersRepo.CanAccessChannel(r.Context(), channelID, userID)
+	if err != nil {
+		http.Error(w, "failed to check permissions", http.StatusInternalServerError)
+		return
+	}
+
+	if !canAccess {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

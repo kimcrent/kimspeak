@@ -6,15 +6,18 @@ import (
 	"strings"
 
 	"github.com/kimcrent/kimspeak/internal/auth"
+	"github.com/kimcrent/kimspeak/internal/guildmembers"
 )
 
 type Handler struct {
-	guildsRepo *Repository
+	guildsRepo       *Repository
+	guildMembersRepo *guildmembers.Repository
 }
 
-func NewHandler(guildsRepo *Repository) *Handler {
+func NewHandler(guildsRepo *Repository, guildMembersRepo *guildmembers.Repository) *Handler {
 	return &Handler{
-		guildsRepo: guildsRepo,
+		guildsRepo:       guildsRepo,
+		guildMembersRepo: guildMembersRepo,
 	}
 }
 
@@ -79,9 +82,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	guild, err := h.guildsRepo.Create(r.Context(), req.Name, userID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": "faild to create guild",
-		})
+		http.Error(w, "failed to create guild", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.guildMembersRepo.AddOwner(r.Context(), guild.ID, userID); err != nil {
+		http.Error(w, "failed to add owner to guild members", http.StatusInternalServerError)
 		return
 	}
 

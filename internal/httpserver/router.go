@@ -6,6 +6,7 @@ import (
 
 	"github.com/kimcrent/kimspeak/internal/auth"
 	"github.com/kimcrent/kimspeak/internal/channels"
+	"github.com/kimcrent/kimspeak/internal/guildmembers"
 	"github.com/kimcrent/kimspeak/internal/guilds"
 	"github.com/kimcrent/kimspeak/internal/health"
 	"github.com/kimcrent/kimspeak/internal/messages"
@@ -19,12 +20,15 @@ func (s *Server) NewRouter() http.Handler {
 
 	usersRepository := users.NewRepository(s.db)
 	authHandler := auth.NewHandler(usersRepository, s.cfg.JWTSecret)
-	guildsRepository := guilds.NewRepository(s.db)
-	guildsHandler := guilds.NewHandler(guildsRepository)
+
 	channelsRepository := channels.NewRepository(s.db)
-	channelsHandler := channels.NewHandler(channelsRepository, guildsRepository)
+	guildsRepository := guilds.NewRepository(s.db)
+	guildMembersRepo := guildmembers.NewRepository(s.db)
 	messagesRepo := messages.NewRepository(s.db)
-	messagesHandler := messages.NewHandler(messagesRepo)
+
+	channelsHandler := channels.NewHandler(channelsRepository, guildsRepository)
+	guildsHandler := guilds.NewHandler(guildsRepository, guildMembersRepo)
+	messagesHandler := messages.NewHandler(messagesRepo, guildMembersRepo)
 
 	mux.HandleFunc("GET /health", healthHandler.Check)
 	mux.HandleFunc("/auth/register", authHandler.Register)
