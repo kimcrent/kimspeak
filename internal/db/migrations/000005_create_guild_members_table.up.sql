@@ -16,4 +16,5 @@ ON guild_members(user_id);
 INSERT INTO guild_members (guild_id, user_id, role)
 SELECT id, owner_id, 'owner'
 FROM guilds
+WHERE owner_id IS NOT NULL
 ON CONFLICT (guild_id, user_id) DO NOTHING;

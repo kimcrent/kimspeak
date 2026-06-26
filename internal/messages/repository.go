@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,7 +18,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-func (r *Repository) Create(ctx context.Context, channelID string, authorID string, content string) (*Message, error) {
+func (r *Repository) Create(ctx context.Context, channelID string, authorID uuid.UUID, content string) (*Message, error) {
 	content = strings.TrimSpace(content)
 
 	query := `

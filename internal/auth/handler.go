@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/kimcrent/kimspeak/internal/users"
 	"golang.org/x/crypto/bcrypt"
@@ -29,22 +31,40 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
-type registerResponse struct {
-	User users.User `json:"user"`
-}
-
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
+type userResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type registerResponse struct {
+	User userResponse `json:"user"`
+}
+
 type loginResponse struct {
-	User        users.User `json:"user"`
-	AccessToken string     `json:"access_token"`
+	User        userResponse `json:"user"`
+	AccessToken string       `json:"access_token"`
 }
 
 type meResponse struct {
-	User users.User `json:"user"`
+	User userResponse `json:"user"`
+}
+
+func toUserResponse(user users.User) userResponse {
+	return userResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +121,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, registerResponse{
-		User: user,
+		User: toUserResponse(user),
 	})
 }
 
@@ -157,7 +177,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, loginResponse{
-		User:        user,
+		User:        toUserResponse(user),
 		AccessToken: accessToken,
 	})
 }
@@ -187,7 +207,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, meResponse{
-		User: user,
+		User: toUserResponse(*user),
 	})
 }
 

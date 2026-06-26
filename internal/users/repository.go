@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -63,7 +64,7 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error
 	return user, nil
 }
 
-func (r *Repository) FindByID(ctx context.Context, id string) (User, error) {
+func (r *Repository) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	var user User
 
 	err := r.db.QueryRow(ctx, `
@@ -79,8 +80,8 @@ func (r *Repository) FindByID(ctx context.Context, id string) (User, error) {
 		&user.UpdatedAt,
 	)
 	if err != nil {
-		return User{}, err
+		return nil, err
 	}
-	return user, nil
+	return &user, nil
 
 }

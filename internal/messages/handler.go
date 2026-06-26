@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/kimcrent/kimspeak/internal/auth"
 	"github.com/kimcrent/kimspeak/internal/guildmembers"
 )
@@ -39,8 +40,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authorID, ok := auth.UserIDFromContext(r.Context())
-	if !ok || authorID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || authorID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
 		return
 	}
 
@@ -90,9 +93,10 @@ func (h *Handler) ListByChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := auth.UserIDFromContext(r.Context())
-	if !ok || userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+	if !ok || userID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
 	}
 
 	canAccess, err := h.guildMembersRepo.CanAccessChannel(r.Context(), channelID, userID)

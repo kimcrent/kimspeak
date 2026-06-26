@@ -32,7 +32,7 @@ func (h *Handler) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := contextWithUserID(r.Context(), userID)
+		ctx := WithUserID(r.Context(), userID)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
