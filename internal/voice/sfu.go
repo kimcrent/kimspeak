@@ -1,0 +1,235 @@
+package voice
+
+import (
+	"fmt"
+	"log/slog"
+	"sync"
+
+	"github.com/pion/webrtc/v4"
+)
+
+type SFU struct {
+	mu     sync.RWMutex
+	rooms  map[string]*Room
+	logger *slog.Logger
+}
+
+func NewSFU(logger *slog.Logger) *SFU {
+	return &SFU{
+		rooms:  make(map[string]*Room),
+		logger: logger,
+	}
+}
+
+func (s *SFU) GetRoom(roomID string) *Room {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	room, ok := s.rooms[roomID]
+	if ok {
+		return room
+	}
+
+	room = NewRoom(roomID, s.logger)
+	s.rooms[roomID] = room
+
+	return room
+}
+
+type Room struct {
+	id     string
+	mu     sync.Mutex
+	peers  map[string]*Peer
+	tracks map[string]*RelayTrack
+	logger *slog.Logger
+}
+
+func NewRoom(id string, logger *slog.Logger) *Room {
+	return &Room{
+		id:     id,
+		peers:  make(map[string]*Peer),
+		tracks: make(map[string]*RelayTrack),
+		logger: logger,
+	}
+}
+
+type RelayTrack struct {
+	ID      string
+	OwnerID string
+	Track   *webrtc.TrackLocalStaticRTP
+}
+
+type Peer struct {
+	UserID string
+	RoomID string
+
+	pc *webrtc.PeerConnection
+	ws *SafeWS
+
+	Room   *Room
+	logger *slog.Logger
+
+	mu      sync.Mutex
+	senders map[string]*webrtc.RTPSender
+
+	negotiationMu sync.Mutex
+}
+
+func (r *Room) AddPeer(peer *Peer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.peers[peer.UserID] = peer
+
+	for trackID, relayTrack := range r.tracks {
+		if relayTrack.OwnerID == peer.UserID {
+			continue
+		}
+
+		sender, err := peer.pc.AddTrack(relayTrack.Track)
+		if err != nil {
+			r.logger.Warn(
+				"failed to add existing track to peer",
+				"room_id", r.id,
+				"user_id", peer.UserID,
+				"track_id", trackID,
+				"error", err,
+			)
+			continue
+		}
+		peer.senders[trackID] = sender
+
+		go drainRTCP(sender)
+	}
+}
+
+func (r *Room) RemovePeer(peer *Peer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.peers, peer.UserID)
+
+	for trackID, relayTrack := range r.tracks {
+		if relayTrack.OwnerID != peer.UserID {
+			continue
+		}
+
+		delete(r.tracks, trackID)
+
+		for _, otherPeer := range r.peers {
+			otherPeer.removeSender(trackID)
+			go otherPeer.negotiate()
+		}
+	}
+}
+
+func (r *Room) AddRelayTrack(ownerID string, remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocalStaticRTP, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	trackID := fmt.Sprintf("%s_%s", ownerID, remoteTrack.ID())
+
+	localTrack, err := webrtc.NewTrackLocalStaticRTP(
+		remoteTrack.Codec().RTPCodecCapability,
+		trackID,
+		remoteTrack.StreamID(),
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	r.tracks[trackID] = &RelayTrack{
+		ID:      trackID,
+		OwnerID: ownerID,
+		Track:   localTrack,
+	}
+
+	for _, peer := range r.peers {
+		if peer.UserID == ownerID {
+			continue
+		}
+		sender, err := peer.pc.AddTrack(localTrack)
+		if err != nil {
+			r.logger.Warn(
+				"failed to add relay track to peer",
+				"room_id", r.id,
+				"user_id", peer.UserID,
+				"track_id", trackID,
+				"error", err,
+			)
+			continue
+		}
+		peer.senders[trackID] = sender
+
+		go drainRTCP(sender)
+		go peer.negotiate()
+	}
+	return localTrack, trackID, nil
+}
+
+func (r *Room) RemoveRelayTrack(trackID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.tracks, trackID)
+
+	for _, peer := range r.peers {
+		peer.removeSender(trackID)
+		go peer.negotiate()
+	}
+}
+
+func (p *Peer) removeSender(trackID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	sender, ok := p.senders[trackID]
+	if !ok {
+		return
+	}
+
+	delete(p.senders, trackID)
+
+	if err := p.pc.RemoveTrack(sender); err != nil {
+		p.logger.Warn(
+			"failed to remove sender",
+			"user_id", p.UserID,
+			"track_id", trackID,
+			"error", err,
+		)
+	}
+}
+
+func (p *Peer) negotiate() {
+	p.negotiationMu.Lock()
+	defer p.negotiationMu.Unlock()
+
+	offer, err := p.pc.CreateOffer(nil)
+	if err != nil {
+		p.logger.Warn("failed to create server offer", "user_id", p.UserID, "error", err)
+		return
+	}
+	if err := p.pc.SetLocalDescription(offer); err != nil {
+		p.logger.Warn("failed to set local server offer", "user_id", p.UserID, "error", err)
+		return
+	}
+
+	err = p.ws.WriteJSON(SignalMessage{
+		Type: MessageTypeOffer,
+		SDP:  p.pc.LocalDescription(),
+	})
+
+	if err != nil {
+		p.logger.Warn("failed to send server offer", "user_id", p.UserID, "error", err)
+	}
+}
+
+func drainRTCP(sender *webrtc.RTPSender) {
+	buf := make([]byte, 1500)
+
+	for {
+		if _, _, err := sender.Read(buf); err != nil {
+			return
+		}
+	}
+}
