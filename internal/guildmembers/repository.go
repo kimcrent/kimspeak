@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type ChannelMember struct {
+	ID       uuid.UUID `json:"id"`
+	Username string    `json:"username"`
+	Role     string    `json:"role"`
+}
+
 type Repository struct {
 	db *pgxpool.Pool
 }
@@ -27,6 +33,131 @@ func (r *Repository) AddMember(ctx context.Context, guildID, userID uuid.UUID, r
 
 	_, err := r.db.Exec(ctx, query, guildID, userID, role)
 	return err
+}
+
+func (r *Repository) CanManageGuild(ctx context.Context, guildID uuid.UUID, userID uuid.UUID) (bool, error) {
+	var exists bool
+
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM guilds g
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = g.id
+				AND gm.user_id = $2
+			WHERE g.id = $1
+				AND (
+					g.owner_id = $2
+					OR gm.role IN ('owner', 'admin')
+				)
+		)
+	`, guildID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func (r *Repository) FindByGuildAndUser(ctx context.Context, guildID uuid.UUID, userID uuid.UUID) (ChannelMember, error) {
+	var member ChannelMember
+
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			u.id,
+			u.username,
+			gm.role
+		FROM guild_members gm
+		JOIN users u ON u.id = gm.user_id
+		WHERE gm.guild_id = $1
+			AND gm.user_id = $2
+	`, guildID, userID).Scan(
+		&member.ID,
+		&member.Username,
+		&member.Role,
+	)
+	if err != nil {
+		return ChannelMember{}, err
+	}
+
+	return member, nil
+}
+
+func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]ChannelMember, error) {
+	query := `
+		WITH raw_members AS (
+			SELECT
+				u.id,
+				u.username,
+				gm.role
+			FROM guild_members gm
+			JOIN users u ON u.id = gm.user_id
+			WHERE gm.guild_id = $1
+
+			UNION ALL
+
+			SELECT
+				u.id,
+				u.username,
+				'owner' AS role
+			FROM guilds g
+			JOIN users u ON u.id = g.owner_id
+			WHERE g.id = $1
+		),
+		ranked_members AS (
+			SELECT
+				id,
+				username,
+				MIN(
+					CASE role
+						WHEN 'owner' THEN 0
+						WHEN 'admin' THEN 1
+						ELSE 2
+					END
+				) AS role_rank
+			FROM raw_members
+			GROUP BY id, username
+		)
+		SELECT
+			id,
+			username,
+			CASE role_rank
+				WHEN 0 THEN 'owner'
+				WHEN 1 THEN 'admin'
+				ELSE 'member'
+			END AS role
+		FROM ranked_members
+		ORDER BY role_rank, lower(username)
+	`
+
+	rows, err := r.db.Query(ctx, query, guildID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]ChannelMember, 0)
+
+	for rows.Next() {
+		var member ChannelMember
+
+		err := rows.Scan(
+			&member.ID,
+			&member.Username,
+			&member.Role,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		members = append(members, member)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return members, nil
 }
 
 func (r *Repository) AddOwner(ctx context.Context, guildID string, userID uuid.UUID) error {
@@ -75,9 +206,15 @@ func (r *Repository) CanAccessChannel(ctx context.Context, channelID string, use
 		SELECT EXISTS (
 			SELECT 1
 			FROM channels c
-			JOIN guild_members gm ON gm.guild_id = c.guild_id
-			WHERE c.id = $1
+			JOIN guilds g ON g.id = c.guild_id
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = c.guild_id
 				AND gm.user_id = $2
+			WHERE c.id = $1
+				AND (
+					g.owner_id = $2
+					OR gm.user_id = $2
+				)
 		);
 	`
 
@@ -88,4 +225,86 @@ func (r *Repository) CanAccessChannel(ctx context.Context, channelID string, use
 		return false, err
 	}
 	return exists, nil
+}
+
+func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]ChannelMember, error) {
+	query := `
+		WITH channel_guild AS (
+			SELECT guild_id
+			FROM channels
+			WHERE id = $1
+		),
+		raw_members AS (
+			SELECT
+				u.id,
+				u.username,
+				gm.role
+			FROM channel_guild cg
+			JOIN guild_members gm ON gm.guild_id = cg.guild_id
+			JOIN users u ON u.id = gm.user_id
+
+			UNION ALL
+
+			SELECT
+				u.id,
+				u.username,
+				'owner' AS role
+			FROM channel_guild cg
+			JOIN guilds g ON g.id = cg.guild_id
+			JOIN users u ON u.id = g.owner_id
+		),
+		ranked_members AS (
+			SELECT
+				id,
+				username,
+				MIN(
+					CASE role
+						WHEN 'owner' THEN 0
+						WHEN 'admin' THEN 1
+						ELSE 2
+					END
+				) AS role_rank
+			FROM raw_members
+			GROUP BY id, username
+		)
+		SELECT
+			id,
+			username,
+			CASE role_rank
+				WHEN 0 THEN 'owner'
+				WHEN 1 THEN 'admin'
+				ELSE 'member'
+			END AS role
+		FROM ranked_members
+		ORDER BY role_rank, lower(username)
+	`
+
+	rows, err := r.db.Query(ctx, query, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]ChannelMember, 0)
+
+	for rows.Next() {
+		var member ChannelMember
+
+		err := rows.Scan(
+			&member.ID,
+			&member.Username,
+			&member.Role,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		members = append(members, member)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return members, nil
 }

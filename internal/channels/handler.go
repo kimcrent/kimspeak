@@ -9,18 +9,25 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kimcrent/kimspeak/internal/auth"
+	"github.com/kimcrent/kimspeak/internal/guildmembers"
 	"github.com/kimcrent/kimspeak/internal/guilds"
 )
 
 type Handler struct {
-	channelsRepo *Repository
-	guildsRepo   *guilds.Repository
+	channelsRepo     *Repository
+	guildsRepo       *guilds.Repository
+	guildMembersRepo *guildmembers.Repository
 }
 
-func NewHandler(channelsRepo *Repository, guildsRepo *guilds.Repository) *Handler {
+func NewHandler(
+	channelsRepo *Repository,
+	guildsRepo *guilds.Repository,
+	guildMembersRepo *guildmembers.Repository,
+) *Handler {
 	return &Handler{
-		channelsRepo: channelsRepo,
-		guildsRepo:   guildsRepo,
+		channelsRepo:     channelsRepo,
+		guildsRepo:       guildsRepo,
+		guildMembersRepo: guildMembersRepo,
 	}
 }
 
@@ -38,12 +45,22 @@ type listChannelsResponse struct {
 	Channels []Channel `json:"channels"`
 }
 
+type listChannelMembersResponse struct {
+	Members []guildmembers.ChannelMember `json:"members"`
+}
+
+type updateChannelRequest struct {
+	Name string `json:"name"`
+}
+
 func (h *Handler) HandleChannels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		h.Create(w, r)
 	case http.MethodGet:
 		h.List(w, r)
+	case http.MethodPatch:
+		h.Update(w, r)
 	case http.MethodDelete:
 		h.Delete(w, r)
 	default:
@@ -218,4 +235,124 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	channelIDRaw := strings.TrimSpace(r.URL.Query().Get("id"))
+	if channelIDRaw == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "channel id is required",
+		})
+		return
+	}
+
+	channelID, err := uuid.Parse(channelIDRaw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid channel id",
+		})
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	var req updateChannelRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid json",
+		})
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "name is required",
+		})
+		return
+	}
+
+	channel, err := h.channelsRepo.UpdateNameByAdmin(r.Context(), channelID, userID, req.Name)
+	if errors.Is(err, ErrChannelNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "channel not found",
+		})
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "only admin can rename channel",
+		})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to rename channel",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, createChannelResponse{
+		Channel: channel,
+	})
+}
+
+func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
+	channelIDRaw := strings.TrimSpace(r.PathValue("channel_id"))
+	if channelIDRaw == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "channel_id is required",
+		})
+		return
+	}
+
+	channelID, err := uuid.Parse(channelIDRaw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid channel id",
+		})
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	canAccess, err := h.guildMembersRepo.CanAccessChannel(r.Context(), channelID.String(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to check permissions",
+		})
+		return
+	}
+
+	if !canAccess {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "forbidden",
+		})
+		return
+	}
+
+	members, err := h.guildMembersRepo.ListByChannel(r.Context(), channelID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to get channel members",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, listChannelMembersResponse{
+		Members: members,
+	})
 }

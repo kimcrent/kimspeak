@@ -146,8 +146,6 @@ input:disabled {
 }
 
 .authForm input,
-.quickCreate input,
-.channelCreate input,
 .messageInput input {
   min-width: 0;
   border: 1px solid #202227;
@@ -163,8 +161,6 @@ input:disabled {
 }
 
 .authForm input:focus,
-.quickCreate input:focus,
-.channelCreate input:focus,
 .messageInput input:focus {
   border-color: #5865f2;
 }
@@ -252,6 +248,19 @@ input:disabled {
   color: #ffffff;
 }
 
+.server.addServer {
+  border: 1px dashed #3a3d44;
+  background: transparent;
+  color: #23a55a;
+  font-size: 22px;
+}
+
+.server.addServer:hover {
+  border-color: #23a55a;
+  background: rgba(35, 165, 90, 0.12);
+  color: #ffffff;
+}
+
 .server.active::before {
   content: "";
   position: absolute;
@@ -297,23 +306,7 @@ input:disabled {
   white-space: nowrap;
 }
 
-.quickCreate,
-.channelCreate {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
-  gap: 8px;
-  padding: 12px;
-}
-
-.quickCreate input,
-.channelCreate input {
-  height: 36px;
-  padding: 0 10px;
-}
-
-.quickCreate button,
-.channelCreate button,
-.channelTypeToggle button,
+.channelActionButton,
 .profileLogout {
   border: 0;
   border-radius: 8px;
@@ -322,9 +315,7 @@ input:disabled {
   font-weight: 900;
 }
 
-.quickCreate button:hover,
-.channelCreate button:hover,
-.channelTypeToggle button.active,
+.channelActionButton:hover:not(:disabled),
 .profileLogout:hover {
   background: #5865f2;
   color: #ffffff;
@@ -340,13 +331,33 @@ input:disabled {
   padding: 8px;
 }
 
+.channelCategoryRow {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 5px;
+}
+
 .channelCategory,
 .membersTitle {
-  margin: 10px 8px 7px;
+  margin: 0 8px;
   color: #949ba4;
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.channelActionButton {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  color: #b7bbc4;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .channel {
@@ -413,17 +424,6 @@ input:disabled {
   background: #383a40;
   color: #b7bbc4;
   opacity: 1;
-}
-
-.channelCreate {
-  grid-template-columns: 76px minmax(0, 1fr) 36px;
-  border-top: 1px solid #202227;
-}
-
-.channelTypeToggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
 }
 
 .profilePanel {
@@ -696,13 +696,53 @@ input:disabled {
   margin: 0 0 10px;
 }
 
+.membersTitle span {
+  float: right;
+  color: #dfe1e6;
+}
+
+.inviteForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.inviteForm input {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid #202227;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #202227;
+  color: #ffffff;
+  outline: none;
+}
+
+.inviteForm input:focus {
+  border-color: #5865f2;
+}
+
+.inviteForm button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #5865f2;
+  color: #ffffff;
+  font-weight: 900;
+}
+
 .member {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 42px;
   border-radius: 8px;
+  padding: 6px 0;
   color: #dfe1e6;
+}
+
+.member.current .memberAvatar {
+  background: #23a55a;
 }
 
 .member.muted {
@@ -711,6 +751,42 @@ input:disabled {
 
 .member.muted .memberAvatar {
   background: #52565f;
+}
+
+.memberInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.memberName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberName {
+  font-weight: 800;
+}
+
+.memberRole {
+  flex: 0 0 auto;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: #383a40;
+  color: #b7bbc4;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.memberRole.owner {
+  background: rgba(88, 101, 242, 0.18);
+  color: #aeb6ff;
+}
+
+.memberRole.admin {
+  background: rgba(35, 165, 90, 0.16);
+  color: #7ae0a7;
 }
 
 .statRow {
@@ -722,6 +798,105 @@ input:disabled {
 
 .statRow b {
   color: #ffffff;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.56);
+}
+
+.createModal {
+  width: min(420px, 100%);
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  padding: 18px;
+  background: #2b2d31;
+  color: #ffffff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.createModalHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.createModalIcon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #5865f2;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.createModal h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.createModalForm {
+  display: grid;
+  gap: 14px;
+}
+
+.createModalForm input {
+  min-width: 0;
+  height: 44px;
+  border: 1px solid #202227;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #202227;
+  color: #ffffff;
+  outline: none;
+}
+
+.createModalForm input:focus {
+  border-color: #5865f2;
+}
+
+.createModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.createModalActions button {
+  min-width: 104px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 900;
+}
+
+.createModalSecondary {
+  background: #383a40;
+  color: #dfe1e6;
+}
+
+.createModalSecondary:hover:not(:disabled) {
+  background: #404249;
+  color: #ffffff;
+}
+
+.createModalPrimary {
+  background: #5865f2;
+  color: #ffffff;
+}
+
+.createModalPrimary:hover:not(:disabled) {
+  background: #6875ff;
 }
 
 @media (max-width: 1180px) {
@@ -876,6 +1051,11 @@ input:disabled {
   text-align: left;
 }
 
+.voiceChannelActionRow .voiceChannelHeader {
+  flex: 1;
+  min-width: 0;
+}
+
 .voiceChannelHeader:hover {
   background: #35373c;
   color: #ffffff;
@@ -991,6 +1171,7 @@ input:disabled {
   min-width: 0;
 }
 
+.channelEditButton,
 .channelDeleteButton {
   width: 28px;
   height: 28px;
@@ -1004,6 +1185,11 @@ input:disabled {
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
+}
+
+.channelEditButton:hover:not(:disabled) {
+  background: rgba(88, 101, 242, 0.16);
+  color: #aeb6ff;
 }
 
 .channelDeleteButton:hover:not(:disabled) {

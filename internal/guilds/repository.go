@@ -46,7 +46,27 @@ func (r *Repository) Create(ctx context.Context, name string, ownerID uuid.UUID)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO guild_members (guild_id, user_id, role)
 		VALUES ($1, $2, $3)
+		ON CONFLICT (guild_id, user_id)
+		DO UPDATE SET role = 'owner'
 	`, guild.ID, ownerID, "owner")
+
+	if err != nil {
+		return Guild{}, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO channels (guild_id, name, type, position)
+		VALUES ($1, 'general', 'text', 0)
+	`, guild.ID)
+
+	if err != nil {
+		return Guild{}, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO channels (guild_id, name, type, position)
+		VALUES ($1, 'Голосовой канал 1', 'voice', 1)
+	`, guild.ID)
 
 	if err != nil {
 		return Guild{}, err
@@ -146,8 +166,15 @@ func (r *Repository) IsMember(ctx context.Context, guildID string, userID uuid.U
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM guild_members
-			WHERE guild_id = $1 AND user_id = $2
+			FROM guilds g
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = g.id
+				AND gm.user_id = $2
+			WHERE g.id = $1
+				AND (
+					g.owner_id = $2
+					OR gm.user_id = $2
+				)
 		)
 	`, guildID, userID).Scan(&exists)
 	if err != nil {

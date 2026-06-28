@@ -35,6 +35,12 @@ export type Message = {
   updated_at?: string;
 };
 
+export type ChannelMember = {
+  id: string;
+  username: string;
+  role: "owner" | "admin" | "member";
+};
+
 export type AuthResponse = {
   token?: string;
   access_token?: string;
@@ -144,6 +150,23 @@ export async function createGuild(token: string, name: string): Promise<Guild> {
   return guild;
 }
 
+export async function inviteGuildMember(
+  token: string,
+  guildId: string,
+  username: string,
+): Promise<ChannelMember> {
+  const data = await request<{ member: ChannelMember }>(
+    `/guilds/${guildId}/members`,
+    {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    },
+    token,
+  );
+
+  return data.member;
+}
+
 export async function listChannels(token: string, guildId: string): Promise<Channel[]> {
   const data = await request<{ channels: Channel[] }>(
     `/channels?guild_id=${encodeURIComponent(guildId)}`,
@@ -182,6 +205,36 @@ export async function deleteChannel(token: string, channelId: string): Promise<v
     { method: "DELETE" },
     token,
   );
+}
+
+export async function renameChannel(
+  token: string,
+  channelId: string,
+  name: string,
+): Promise<Channel> {
+  const data = await request<{ channel: Channel }>(
+    `/channels?id=${encodeURIComponent(channelId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    },
+    token,
+  );
+
+  return data.channel;
+}
+
+export async function listChannelMembers(
+  token: string,
+  channelId: string,
+): Promise<ChannelMember[]> {
+  const data = await request<{ members: ChannelMember[] }>(
+    `/channels/${channelId}/members`,
+    { method: "GET" },
+    token,
+  );
+
+  return data.members || [];
 }
 
 export async function listMessages(token: string, channelId: string): Promise<Message[]> {

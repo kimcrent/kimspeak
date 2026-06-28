@@ -101,10 +101,15 @@ func (r *Repository) DeleteByAdmin(ctx context.Context, channelID uuid.UUID, use
 	err = r.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM guild_members
-			WHERE guild_id = $1
-				AND user_id = $2
-				AND role IN ('owner', 'admin')
+			FROM guilds g
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = g.id
+				AND gm.user_id = $2
+			WHERE g.id = $1
+				AND (
+					g.owner_id = $2
+					OR gm.role IN ('owner', 'admin')
+				)
 		)
 	`, guildID, userID).Scan(&canDelete)
 	if err != nil {
@@ -127,4 +132,69 @@ func (r *Repository) DeleteByAdmin(ctx context.Context, channelID uuid.UUID, use
 		return ErrChannelNotFound
 	}
 	return nil
+}
+
+func (r *Repository) UpdateNameByAdmin(ctx context.Context, channelID uuid.UUID, userID uuid.UUID, name string) (Channel, error) {
+	var guildID uuid.UUID
+
+	err := r.db.QueryRow(ctx, `
+		SELECT guild_id
+		FROM channels
+		WHERE id = $1
+	`, channelID).Scan(&guildID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Channel{}, ErrChannelNotFound
+	}
+	if err != nil {
+		return Channel{}, err
+	}
+
+	var canUpdate bool
+
+	err = r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM guilds g
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = g.id
+				AND gm.user_id = $2
+			WHERE g.id = $1
+				AND (
+					g.owner_id = $2
+					OR gm.role IN ('owner', 'admin')
+				)
+		)
+	`, guildID, userID).Scan(&canUpdate)
+	if err != nil {
+		return Channel{}, err
+	}
+
+	if !canUpdate {
+		return Channel{}, ErrForbidden
+	}
+
+	var channel Channel
+
+	err = r.db.QueryRow(ctx, `
+		UPDATE channels
+		SET name = $2, updated_at = now()
+		WHERE id = $1
+		RETURNING id, guild_id, name, type, position, created_at, updated_at
+	`, channelID, name).Scan(
+		&channel.ID,
+		&channel.GuildID,
+		&channel.Name,
+		&channel.Type,
+		&channel.Position,
+		&channel.CreatedAt,
+		&channel.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Channel{}, ErrChannelNotFound
+	}
+	if err != nil {
+		return Channel{}, err
+	}
+
+	return channel, nil
 }
