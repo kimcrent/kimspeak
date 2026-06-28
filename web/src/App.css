@@ -375,11 +375,18 @@ input:disabled {
   margin-top: 4px;
 }
 
-.channel span {
+.channelIcon {
   width: 16px;
   flex: 0 0 16px;
   color: #80848e;
   font-weight: 900;
+}
+
+.channelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .channel:hover,
@@ -970,4 +977,36 @@ input:disabled {
 
 .voiceChannelMember:hover .voiceChannelMemberIcons {
   opacity: 1;
+}
+
+.channelRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.channelRow .channel {
+  flex: 1;
+  min-width: 0;
+}
+
+.channelDeleteButton {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #8b8d98;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.channelDeleteButton:hover:not(:disabled) {
+  background: rgba(255, 90, 90, 0.12);
+  color: #ff6b6b;
 }

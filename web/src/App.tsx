@@ -6,6 +6,7 @@ import {
   createChannel,
   createGuild,
   createMessage,
+  deleteChannel as deleteChannelRequest,
   getMe,
   listChannels,
   listGuilds,
@@ -69,6 +70,7 @@ function App() {
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [deletingChannelId, setDeletingChannelId] = useState("");
 
   const activeGuild = useMemo(
     () => guilds.find((guild) => guild.id === activeGuildId) || null,
@@ -275,6 +277,49 @@ function App() {
       setStatus("Ошибка создания сервера");
     } finally {
       setIsWorkspaceLoading(false);
+    }
+  }
+
+  async function handleDeleteTextChannel(channelToDelete: Channel) {
+    if (!token || channelToDelete.type !== "text") {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить текстовый канал #${channelToDelete.name}?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingChannelId(channelToDelete.id);
+    setError("");
+    setStatus("Удаляем канал...");
+
+    try {
+      await deleteChannelRequest(token, channelToDelete.id);
+
+      const nextChannels = channels.filter(
+        (channel) => channel.id !== channelToDelete.id,
+      );
+      setChannels(nextChannels);
+
+      if (activeChannelId === channelToDelete.id) {
+        const nextActiveChannel =
+          nextChannels.find((channel) => channel.type === "text") ||
+          nextChannels[0] ||
+          null;
+
+        setActiveChannelId(nextActiveChannel?.id || "");
+        setMessages([]);
+      }
+
+      setStatus("Канал удалён");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить канал");
+      setStatus("Ошибка удаления канала");
+    } finally {
+      setDeletingChannelId("");
     }
   }
 
@@ -548,23 +593,39 @@ function App() {
         <div className="channelScroll">
           <div className="channelBlock">
             <div className="channelCategory">Текстовые каналы</div>
+
             {textChannels.map((channel) => (
-              <button
-                className={
-                  channel.id === activeChannelId ? "channel active" : "channel"
-                }
-                key={channel.id}
-                onClick={() => setActiveChannelId(channel.id)}
-                type="button"
-              >
-                <span>#</span>
-                {channel.name}
-              </button>
+              <div className="channelRow" key={channel.id}>
+                <button
+                  className={
+                    channel.id === activeChannelId
+                      ? "channel active"
+                      : "channel"
+                  }
+                  onClick={() => setActiveChannelId(channel.id)}
+                  type="button"
+                >
+                  <span className="channelIcon">#</span>
+                  <span className="channelName">{channel.name}</span>
+                </button>
+                <button
+                  aria-label={`Удалить текстовый канал ${channel.name}`}
+                  className="channelDeleteButton"
+                  disabled={deletingChannelId === channel.id}
+                  onClick={() => handleDeleteTextChannel(channel)}
+                  title={`Удалить #${channel.name}`}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
             ))}
+
             {!textChannels.length && (
               <div className="emptyHint">Пока нет текстовых каналов</div>
             )}
           </div>
+
           <div className="channelBlock">
             <div className="channelCategory">Голосовые каналы</div>
 

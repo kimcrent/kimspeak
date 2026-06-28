@@ -2,9 +2,15 @@ package channels
 
 import (
 	"context"
+	"errors"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrChannelNotFound = errors.New("channel not found")
+var ErrForbidden = errors.New("forbidden")
 
 type Repository struct {
 	db *pgxpool.Pool
@@ -73,4 +79,52 @@ func (r *Repository) FindByGuildID(ctx context.Context, guildID string) ([]Chann
 		return nil, err
 	}
 	return channels, nil
+}
+
+func (r *Repository) DeleteByAdmin(ctx context.Context, channelID uuid.UUID, userID uuid.UUID) error {
+	var guildID uuid.UUID
+
+	err := r.db.QueryRow(ctx, `
+		SELECT guild_id
+		FROM channels
+		WHERE id = $1
+	`, channelID).Scan(&guildID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrChannelNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	var canDelete bool
+
+	err = r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM guild_members
+			WHERE guild_id = $1
+				AND user_id = $2
+				AND role IN ('owner', 'admin')
+		)
+	`, guildID, userID).Scan(&canDelete)
+	if err != nil {
+		return err
+	}
+
+	if !canDelete {
+		return ErrForbidden
+	}
+
+	commandTag, err := r.db.Exec(ctx, `
+		DELETE FROM channels
+		WHERE id = $1
+	`, channelID)
+	if err != nil {
+		return err
+	}
+
+	if commandTag.RowsAffected() == 0 {
+		return ErrChannelNotFound
+	}
+	return nil
 }

@@ -176,6 +176,14 @@ export async function createChannel(
   return data.channel;
 }
 
+export async function deleteChannel(token: string, channelId: string): Promise<void> {
+  await request<void>(
+    `/channels?id=${encodeURIComponent(channelId)}`,
+    { method: "DELETE" },
+    token,
+  );
+}
+
 export async function listMessages(token: string, channelId: string): Promise<Message[]> {
   const data = await request<{ messages: Message[] }>(
     `/channels/${channelId}/messages?limit=80`,

@@ -2,6 +2,7 @@ package guilds
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -82,6 +83,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	guild, err := h.guildsRepo.Create(r.Context(), req.Name, userID)
 	if err != nil {
+		fmt.Println("failed to create guild", err)
 		http.Error(w, "failed to create guild", http.StatusInternalServerError)
 		return
 	}

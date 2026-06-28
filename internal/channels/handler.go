@@ -3,9 +3,11 @@ package channels
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/kimcrent/kimspeak/internal/auth"
 	"github.com/kimcrent/kimspeak/internal/guilds"
 )
@@ -42,6 +44,8 @@ func (h *Handler) HandleChannels(w http.ResponseWriter, r *http.Request) {
 		h.Create(w, r)
 	case http.MethodGet:
 		h.List(w, r)
+	case http.MethodDelete:
+		h.Delete(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
 			"error": "method not allowed",
@@ -167,4 +171,51 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	channelIDRaw := strings.TrimSpace(r.URL.Query().Get("id"))
+	if channelIDRaw == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "channel id is required",
+		})
+		return
+	}
+
+	channelID, err := uuid.Parse(channelIDRaw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid channel id",
+		})
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	err = h.channelsRepo.DeleteByAdmin(r.Context(), channelID, userID)
+	if errors.Is(err, ErrChannelNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "channel not found",
+		})
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "only admin can delete channel",
+		})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to delete channel",
+		})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
