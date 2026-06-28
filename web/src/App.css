@@ -731,6 +731,62 @@ input:disabled {
   font-weight: 900;
 }
 
+.inviteToast {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 70;
+  width: min(420px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  padding: 14px;
+  background: #24262b;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+}
+
+.inviteToastBody {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.inviteToastBody strong,
+.inviteToastBody span,
+.inviteToastBody small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inviteToastBody span,
+.inviteToastBody small {
+  color: #b7bbc4;
+}
+
+.inviteToastActions {
+  display: flex;
+  gap: 8px;
+}
+
+.inviteToastActions button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #383a40;
+  color: #dfe1e6;
+  font-weight: 900;
+}
+
+.inviteToastActions button:last-child {
+  background: #23a55a;
+  color: #ffffff;
+}
+
 .member {
   display: flex;
   align-items: center;
@@ -959,6 +1015,21 @@ input:disabled {
   .messageInput button {
     width: 100%;
   }
+
+  .inviteToast {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .inviteToastActions {
+    justify-content: stretch;
+  }
+
+  .inviteToastActions button {
+    flex: 1;
+  }
 }
 
 .voice-panel {
@@ -1166,7 +1237,8 @@ input:disabled {
   margin-bottom: 2px;
 }
 
-.channelRow .channel {
+.channelRow .channel,
+.channelRow .voiceChannelHeader {
   flex: 1;
   min-width: 0;
 }

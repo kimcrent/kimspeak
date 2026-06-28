@@ -3,22 +3,34 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import "./App.css";
 import {
+  acceptGuildInvitation,
   createChannel,
   createGuild,
   createMessage,
+  declineGuildInvitation,
+  deleteChannel as deleteChannelRequest,
   getMe,
+  inviteGuildMember,
   listChannels,
+  listGuildInvitations,
+  listGuildMembers,
   listGuilds,
   listMessages,
   login,
   register,
+  renameChannel,
 } from "./api";
-import type { Channel, Guild, Message, User } from "./api";
+import type { Channel, ChannelMember, Guild, GuildInvitation, Message, User } from "./api";
 import { useVoiceRoom } from "./voice/useVoiceRoom";
 import { VoicePanel } from "./voice/VoicePanel";
 
 type AuthMode = "login" | "register";
 type ChannelDraftType = "text" | "voice";
+type CreateModalType = "guild" | ChannelDraftType;
+type RenameDraft = {
+  channelId: string;
+  name: string;
+} | null;
 
 const TOKEN_KEY = "kimspeak_token";
 
@@ -37,6 +49,30 @@ function formatTime(value?: string) {
   }).format(new Date(value));
 }
 
+function getDefaultName(type: CreateModalType) {
+  if (type === "guild") {
+    return "Kimspeak HQ";
+  }
+
+  if (type === "voice") {
+    return "Голосовой канал 1";
+  }
+
+  return "general";
+}
+
+function getRoleLabel(role: ChannelMember["role"]) {
+  if (role === "owner") {
+    return "Владелец";
+  }
+
+  if (role === "admin") {
+    return "Админ";
+  }
+
+  return "Участник";
+}
+
 function App() {
   const voice = useVoiceRoom();
 
@@ -52,14 +88,18 @@ function App() {
 
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [guildMembers, setGuildMembers] = useState<ChannelMember[]>([]);
+  const [invitations, setInvitations] = useState<GuildInvitation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
   const [activeGuildId, setActiveGuildId] = useState("");
   const [activeChannelId, setActiveChannelId] = useState("");
 
-  const [guildName, setGuildName] = useState("Kimspeak HQ");
-  const [channelName, setChannelName] = useState("general");
-  const [channelType, setChannelType] = useState<ChannelDraftType>("text");
+  const [createModalType, setCreateModalType] =
+    useState<CreateModalType | null>(null);
+  const [createName, setCreateName] = useState("");
+  const [renameDraft, setRenameDraft] = useState<RenameDraft>(null);
+  const [inviteUsername, setInviteUsername] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
 
   const [status, setStatus] = useState("Готов к работе");
@@ -68,7 +108,10 @@ function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(() => Boolean(token));
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [isMembersLoading, setIsMembersLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isInviteSending, setIsInviteSending] = useState(false);
+  const [isInvitationUpdating, setIsInvitationUpdating] = useState(false);
 
   const activeGuild = useMemo(
     () => guilds.find((guild) => guild.id === activeGuildId) || null,
@@ -89,6 +132,22 @@ function App() {
     () => channels.filter((channel) => channel.type === "voice"),
     [channels],
   );
+
+  const pendingInvitation = invitations[0] || null;
+  const createModalTitle =
+    createModalType === "guild"
+      ? "Создать сервер"
+      : createModalType === "voice"
+        ? "Создать голосовой канал"
+        : "Создать текстовый канал";
+  const createModalIcon =
+    createModalType === "guild" ? "+" : createModalType === "voice" ? "♪" : "#";
+  const createPlaceholder =
+    createModalType === "guild"
+      ? "Название сервера"
+      : createModalType === "voice"
+        ? "Название голосового канала"
+        : "Название текстового канала";
 
   const isActiveVoiceChannelJoined =
     activeChannel?.type === "voice" &&
@@ -134,7 +193,13 @@ function App() {
     listGuilds(token)
       .then((items) => {
         setGuilds(items);
-        setActiveGuildId((current) => current || items[0]?.id || "");
+        setActiveGuildId((current) => {
+          if (current && items.some((guild) => guild.id === current)) {
+            return current;
+          }
+
+          return items[0]?.id || "";
+        });
         setStatus(
           items.length ? "Серверы загружены" : "Создайте первый сервер",
         );
@@ -148,6 +213,78 @@ function App() {
       .finally(() => {
         setIsWorkspaceLoading(false);
       });
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      setInvitations([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const syncInvitations = () => {
+      listGuildInvitations(token)
+        .then((items) => {
+          if (!isCancelled) {
+            setInvitations(items);
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setInvitations([]);
+          }
+        });
+    };
+
+    syncInvitations();
+
+    const intervalId = window.setInterval(syncInvitations, 7000);
+    window.addEventListener("focus", syncInvitations);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncInvitations);
+    };
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const syncGuilds = () => {
+      listGuilds(token)
+        .then((items) => {
+          if (isCancelled) {
+            return;
+          }
+
+          setGuilds(items);
+          setActiveGuildId((current) => {
+            if (current && items.some((guild) => guild.id === current)) {
+              return current;
+            }
+
+            return items[0]?.id || "";
+          });
+        })
+        .catch(() => {
+          // Silent sync should not overwrite visible errors from user actions.
+        });
+    };
+
+    const intervalId = window.setInterval(syncGuilds, 15000);
+    window.addEventListener("focus", syncGuilds);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncGuilds);
+    };
   }, [token, user]);
 
   useEffect(() => {
@@ -187,6 +324,44 @@ function App() {
       .finally(() => {
         setIsWorkspaceLoading(false);
       });
+  }, [activeGuildId, token]);
+
+  useEffect(() => {
+    if (!token || !activeGuildId) {
+      setGuildMembers([]);
+      setIsMembersLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    setIsMembersLoading(true);
+
+    listGuildMembers(token, activeGuildId)
+      .then((items) => {
+        if (!isCancelled) {
+          setGuildMembers(items);
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          setGuildMembers([]);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Не удалось загрузить участников сервера",
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsMembersLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [activeGuildId, token]);
 
   useEffect(() => {
@@ -252,10 +427,35 @@ function App() {
     }
   }
 
-  async function handleCreateGuild(event: FormEvent<HTMLFormElement>) {
+  function openCreateModal(type: CreateModalType) {
+    setCreateModalType(type);
+    setCreateName(getDefaultName(type));
+    setRenameDraft(null);
+    setError("");
+  }
+
+  function closeCreateModal() {
+    setCreateModalType(null);
+    setCreateName("");
+  }
+
+  function openRenameModal(channel: Channel) {
+    setRenameDraft({
+      channelId: channel.id,
+      name: channel.name,
+    });
+    setCreateModalType(null);
+    setError("");
+  }
+
+  function closeRenameModal() {
+    setRenameDraft(null);
+  }
+
+  async function handleCreateFromModal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!token || !guildName.trim()) {
+    if (!token || !createModalType || !createName.trim()) {
       return;
     }
 
@@ -263,24 +463,77 @@ function App() {
     setError("");
 
     try {
-      const guild = await createGuild(token, guildName.trim());
-      setGuilds((items) => [...items, guild]);
-      setActiveGuildId(guild.id);
-      setGuildName("");
-      setStatus("Сервер создан");
+      if (createModalType === "guild") {
+        const guild = await createGuild(token, createName.trim());
+        setGuilds((items) => [guild, ...items]);
+        setActiveGuildId(guild.id);
+        setStatus("Сервер создан");
+        closeCreateModal();
+        return;
+      }
+
+      if (!activeGuildId) {
+        return;
+      }
+
+      const channel = await createChannel(
+        token,
+        activeGuildId,
+        createName.trim().replace(/^#/, ""),
+        createModalType,
+      );
+      setChannels((items) => [...items, channel]);
+      setActiveChannelId(channel.id);
+      setStatus(
+        createModalType === "voice"
+          ? "Голосовой канал создан"
+          : "Текстовый канал создан",
+      );
+      closeCreateModal();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Не удалось создать сервер",
+        err instanceof Error ? err.message : "Не удалось создать объект",
       );
-      setStatus("Ошибка создания сервера");
+      setStatus("Ошибка создания");
     } finally {
       setIsWorkspaceLoading(false);
     }
   }
 
-  async function deleteChannel(channelId: string) {
-    const token = localStorage.getItem("access_token");
+  async function handleRenameChannel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
+    if (!token || !renameDraft || !renameDraft.name.trim()) {
+      return;
+    }
+
+    setIsWorkspaceLoading(true);
+    setError("");
+
+    try {
+      const channel = await renameChannel(
+        token,
+        renameDraft.channelId,
+        renameDraft.name.trim().replace(/^#/, ""),
+      );
+      setChannels((items) =>
+        items.map((item) => (item.id === channel.id ? channel : item)),
+      );
+      setStatus("Канал переименован");
+      closeRenameModal();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось переименовать канал",
+      );
+      setStatus("Ошибка переименования");
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }
+
+  async function handleDeleteChannel(channelId: string) {
     if (!token) {
       setError("Сначала нужно войти");
       return;
@@ -291,93 +544,28 @@ function App() {
       return;
     }
 
-    const response = await fetch(
-      `http://localhost:8080/channels?id=${channelId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
+    setIsWorkspaceLoading(true);
+    setError("");
 
-    if (response.status === 204) {
-      setChannels((prev) => prev.filter((channel) => channel.id !== channelId));
+    try {
+      await deleteChannelRequest(token, channelId);
+
+      const nextChannels = channels.filter((channel) => channel.id !== channelId);
+      setChannels(nextChannels);
 
       if (activeChannelId === channelId) {
-        setActiveChannelId("");
+        setActiveChannelId(
+          nextChannels.find((channel) => channel.type === "text")?.id ||
+            nextChannels[0]?.id ||
+            "",
+        );
         setMessages([]);
       }
 
-      return;
-    }
-
-    let errorMessage = "Не удалось удалить канал";
-
-    try {
-      const data = await response.json();
-      errorMessage = data.error ?? errorMessage;
-    } catch {
-      // если backend вернул не JSON
-    }
-
-    setError(errorMessage);
-  }
-
-  async function handleCreateChannel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!token || !activeGuildId || !channelName.trim()) {
-      return;
-    }
-
-    setIsWorkspaceLoading(true);
-    setError("");
-
-    try {
-      const channel = await createChannel(
-        token,
-        activeGuildId,
-        channelName.trim().replace(/^#/, ""),
-        channelType,
-      );
-      setChannels((items) => [...items, channel]);
-      setActiveChannelId(channel.id);
-      setChannelName(channelType === "text" ? "general" : "lobby");
-      setStatus("Канал создан");
+      setStatus("Канал удалён");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать канал");
-      setStatus("Ошибка создания канала");
-    } finally {
-      setIsWorkspaceLoading(false);
-    }
-  }
-
-  async function handleCreateVoiceChannel() {
-    if (!token || !activeGuildId) {
-      return;
-    }
-
-    setIsWorkspaceLoading(true);
-    setError("");
-
-    try {
-      const channel = await createChannel(
-        token,
-        activeGuildId,
-        "voice",
-        "voice",
-      );
-      setChannels((items) => [...items, channel]);
-      setActiveChannelId(channel.id);
-      setStatus("Голосовой канал создан");
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Не удалось создать голосовой канал",
-      );
-      setStatus("Ошибка создания канала");
+      setError(err instanceof Error ? err.message : "Не удалось удалить канал");
+      setStatus("Ошибка удаления канала");
     } finally {
       setIsWorkspaceLoading(false);
     }
@@ -427,15 +615,99 @@ function App() {
     }
   }
 
+  async function handleInviteMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !activeGuild || !inviteUsername.trim()) {
+      return;
+    }
+
+    setIsInviteSending(true);
+    setError("");
+
+    try {
+      await inviteGuildMember(token, activeGuild.id, inviteUsername.trim());
+      setInviteUsername("");
+      setStatus("Приглашение отправлено");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Не удалось отправить приглашение",
+      );
+      setStatus("Ошибка приглашения");
+    } finally {
+      setIsInviteSending(false);
+    }
+  }
+
+  async function handleAcceptInvitation(invitationId: string) {
+    if (!token) {
+      return;
+    }
+
+    setIsInvitationUpdating(true);
+    setError("");
+
+    try {
+      const invitation = await acceptGuildInvitation(token, invitationId);
+      setInvitations((items) =>
+        items.filter((item) => item.id !== invitationId),
+      );
+
+      const items = await listGuilds(token);
+      setGuilds(items);
+      setActiveGuildId(
+        items.some((guild) => guild.id === invitation.guild_id)
+          ? invitation.guild_id
+          : items[0]?.id || "",
+      );
+      setStatus(`Вы вступили на сервер ${invitation.guild_name}`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Не удалось принять приглашение",
+      );
+      setStatus("Ошибка принятия приглашения");
+    } finally {
+      setIsInvitationUpdating(false);
+    }
+  }
+
+  async function handleDeclineInvitation(invitationId: string) {
+    if (!token) {
+      return;
+    }
+
+    setIsInvitationUpdating(true);
+    setError("");
+
+    try {
+      await declineGuildInvitation(token, invitationId);
+      setInvitations((items) =>
+        items.filter((item) => item.id !== invitationId),
+      );
+      setStatus("Приглашение отклонено");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Не удалось отклонить приглашение",
+      );
+      setStatus("Ошибка отклонения приглашения");
+    } finally {
+      setIsInvitationUpdating(false);
+    }
+  }
+
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
     setToken("");
     setUser(null);
     setGuilds([]);
     setChannels([]);
+    setGuildMembers([]);
+    setInvitations([]);
     setMessages([]);
     setActiveGuildId("");
     setActiveChannelId("");
+    closeCreateModal();
+    closeRenameModal();
     setStatus("Вы вышли из аккаунта");
     setError("");
   }
@@ -566,6 +838,15 @@ function App() {
               {getInitial(guild.name)}
             </button>
           ))}
+          <button
+            className="server addServer"
+            disabled={isWorkspaceLoading}
+            onClick={() => openCreateModal("guild")}
+            title="Создать сервер"
+            type="button"
+          >
+            +
+          </button>
         </div>
       </aside>
 
@@ -577,36 +858,74 @@ function App() {
           </div>
         </div>
 
-        <form className="quickCreate" onSubmit={handleCreateGuild}>
-          <input
-            value={guildName}
-            onChange={(event) => setGuildName(event.target.value)}
-            placeholder="Новый сервер"
-          />
-          <button
-            disabled={isWorkspaceLoading || !guildName.trim()}
-            title="Создать сервер"
-          >
-            +
-          </button>
-        </form>
-
         <div className="channelScroll">
-          {textChannels.map((channel) => (
-            <button
-              className={
-                channel.id === activeChannelId ? "channel active" : "channel"
-              }
-              key={channel.id}
-              onClick={() => setActiveChannelId(channel.id)}
-              type="button"
-            >
-              <span>#</span>
-              {channel.name}
-            </button>
-          ))}
           <div className="channelBlock">
-            <div className="channelCategory">Голосовые каналы</div>
+            <div className="channelCategoryRow">
+              <div className="channelCategory">Текстовые каналы</div>
+              <button
+                className="channelActionButton"
+                disabled={isWorkspaceLoading || !activeGuild}
+                onClick={() => openCreateModal("text")}
+                title="Создать текстовый канал"
+                type="button"
+              >
+                +
+              </button>
+            </div>
+
+            {textChannels.map((channel) => (
+              <div className="channelRow" key={channel.id}>
+                <button
+                  className={
+                    channel.id === activeChannelId
+                      ? "channel active"
+                      : "channel"
+                  }
+                  onClick={() => setActiveChannelId(channel.id)}
+                  type="button"
+                >
+                  <span className="channelIcon">#</span>
+                  <span className="channelName">{channel.name}</span>
+                </button>
+                <button
+                  className="channelEditButton"
+                  disabled={isWorkspaceLoading}
+                  onClick={() => openRenameModal(channel)}
+                  title="Переименовать канал"
+                  type="button"
+                >
+                  ✎
+                </button>
+                <button
+                  className="channelDeleteButton"
+                  disabled={isWorkspaceLoading}
+                  onClick={() => handleDeleteChannel(channel.id)}
+                  title="Удалить канал"
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            {!textChannels.length && (
+              <div className="emptyHint">Пока нет текстовых каналов</div>
+            )}
+          </div>
+
+          <div className="channelBlock">
+            <div className="channelCategoryRow">
+              <div className="channelCategory">Голосовые каналы</div>
+              <button
+                className="channelActionButton"
+                disabled={isWorkspaceLoading || !activeGuild}
+                onClick={() => openCreateModal("voice")}
+                title="Создать голосовой канал"
+                type="button"
+              >
+                +
+              </button>
+            </div>
 
             {voiceChannels.map((channel) => {
               const isCurrentVoiceChannel =
@@ -619,28 +938,48 @@ function App() {
 
               return (
                 <div className="voiceChannelTree" key={channel.id}>
-                  <button
-                    className={
-                      channel.id === activeChannelId || isCurrentVoiceChannel
-                        ? "voiceChannelHeader active"
-                        : "voiceChannelHeader"
-                    }
-                    onClick={() => {
-                      setActiveChannelId(channel.id);
-
-                      if (!isCurrentVoiceChannel) {
-                        handleJoinVoiceChannel(channel);
+                  <div className="channelRow">
+                    <button
+                      className={
+                        channel.id === activeChannelId || isCurrentVoiceChannel
+                          ? "voiceChannelHeader active"
+                          : "voiceChannelHeader"
                       }
-                    }}
-                    type="button"
-                  >
-                    <span className="voiceChannelIcon">♪</span>
-                    <span className="voiceChannelName">{channel.name}</span>
+                      onClick={() => {
+                        setActiveChannelId(channel.id);
 
-                    {isCurrentVoiceChannel && (
-                      <span className="voiceChannelState">Внутри</span>
-                    )}
-                  </button>
+                        if (!isCurrentVoiceChannel) {
+                          handleJoinVoiceChannel(channel);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <span className="voiceChannelIcon">♪</span>
+                      <span className="voiceChannelName">{channel.name}</span>
+
+                      {isCurrentVoiceChannel && (
+                        <span className="voiceChannelState">Внутри</span>
+                      )}
+                    </button>
+                    <button
+                      className="channelEditButton"
+                      disabled={isWorkspaceLoading}
+                      onClick={() => openRenameModal(channel)}
+                      title="Переименовать канал"
+                      type="button"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="channelDeleteButton"
+                      disabled={isWorkspaceLoading}
+                      onClick={() => handleDeleteChannel(channel.id)}
+                      title="Удалить канал"
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </div>
 
                   {usersInChannel.length > 0 && (
                     <div className="voiceChannelMembers">
@@ -679,7 +1018,7 @@ function App() {
                 <button
                   className="emptyActionButton"
                   disabled={isWorkspaceLoading || !activeGuild}
-                  onClick={handleCreateVoiceChannel}
+                  onClick={() => openCreateModal("voice")}
                   type="button"
                 >
                   Создать голосовой
@@ -688,38 +1027,6 @@ function App() {
             )}
           </div>
         </div>
-
-        {activeGuild && (
-          <form className="channelCreate" onSubmit={handleCreateChannel}>
-            <div className="channelTypeToggle">
-              <button
-                className={channelType === "text" ? "active" : ""}
-                onClick={() => setChannelType("text")}
-                type="button"
-              >
-                #
-              </button>
-              <button
-                className={channelType === "voice" ? "active" : ""}
-                onClick={() => setChannelType("voice")}
-                type="button"
-              >
-                ♪
-              </button>
-            </div>
-            <input
-              value={channelName}
-              onChange={(event) => setChannelName(event.target.value)}
-              placeholder="Новый канал"
-            />
-            <button
-              disabled={isWorkspaceLoading || !channelName.trim()}
-              title="Создать канал"
-            >
-              +
-            </button>
-          </form>
-        )}
 
         <div className="profilePanel">
           <div className="profileAvatar">{getInitial(user.username)}</div>
@@ -867,16 +1174,62 @@ function App() {
           <div className="accountEmail">{user.email}</div>
         </div>
 
+        {activeGuild && (
+          <div className="membersPanel">
+            <div className="membersTitle">Пригласить в сервер</div>
+            <form className="inviteForm" onSubmit={handleInviteMember}>
+              <input
+                disabled={isInviteSending}
+                value={inviteUsername}
+                onChange={(event) => setInviteUsername(event.target.value)}
+                placeholder="Никнейм"
+                autoComplete="off"
+              />
+              <button
+                disabled={isInviteSending || !inviteUsername.trim()}
+                type="submit"
+              >
+                {isInviteSending ? "Отправляем..." : "Пригласить"}
+              </button>
+            </form>
+          </div>
+        )}
+
         <div className="membersPanel">
-          <div className="membersTitle">Участники</div>
-          <div className="member">
-            <div className="memberAvatar">{getInitial(user.username)}</div>
-            <span>{user.username}</span>
+          <div className="membersTitle">
+            Пользователи сервера <span>{guildMembers.length}</span>
           </div>
-          <div className="member muted">
-            <div className="memberAvatar">K</div>
-            <span>kimspeak-bot</span>
-          </div>
+
+          {!activeGuild && <div className="emptyHint">Выберите сервер</div>}
+
+          {activeGuild && isMembersLoading && (
+            <div className="emptyHint">Загружаем участников...</div>
+          )}
+
+          {activeGuild && !isMembersLoading && !guildMembers.length && (
+            <div className="emptyHint">Пока нет участников</div>
+          )}
+
+          {activeGuild &&
+            !isMembersLoading &&
+            guildMembers.map((member) => (
+              <div
+                className={
+                  member.id === user.id ? "member current" : "member"
+                }
+                key={member.id}
+              >
+                <div className="memberAvatar">
+                  {getInitial(member.username)}
+                </div>
+                <div className="memberInfo">
+                  <div className="memberName">{member.username}</div>
+                </div>
+                <span className={`memberRole ${member.role}`}>
+                  {getRoleLabel(member.role)}
+                </span>
+              </div>
+            ))}
         </div>
 
         <div className="membersPanel">
@@ -890,11 +1243,131 @@ function App() {
             <b>{channels.length}</b>
           </div>
           <div className="statRow">
-            <span>Сообщения</span>
-            <b>{messages.length}</b>
+            <span>Пользователи</span>
+            <b>{activeGuild ? guildMembers.length : 0}</b>
           </div>
         </div>
       </aside>
+
+      {pendingInvitation && (
+        <div className="inviteToast" role="status">
+          <div className="inviteToastBody">
+            <strong>Приглашение на сервер</strong>
+            <span>
+              {pendingInvitation.inviter_username} приглашает в{" "}
+              {pendingInvitation.guild_name}
+            </span>
+            {invitations.length > 1 && (
+              <small>Ещё приглашений: {invitations.length - 1}</small>
+            )}
+          </div>
+          <div className="inviteToastActions">
+            <button
+              disabled={isInvitationUpdating}
+              onClick={() => handleDeclineInvitation(pendingInvitation.id)}
+              type="button"
+            >
+              Отклонить
+            </button>
+            <button
+              disabled={isInvitationUpdating}
+              onClick={() => handleAcceptInvitation(pendingInvitation.id)}
+              type="button"
+            >
+              Принять
+            </button>
+          </div>
+        </div>
+      )}
+
+      {createModalType && (
+        <div className="modalBackdrop">
+          <section className="createModal" aria-modal="true" role="dialog">
+            <div className="createModalHeader">
+              <div className="createModalIcon">{createModalIcon}</div>
+              <div>
+                <h2>{createModalTitle}</h2>
+              </div>
+            </div>
+
+            <form className="createModalForm" onSubmit={handleCreateFromModal}>
+              <input
+                autoFocus
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+                placeholder={createPlaceholder}
+              />
+
+              <div className="createModalActions">
+                <button
+                  className="createModalSecondary"
+                  disabled={isWorkspaceLoading}
+                  onClick={closeCreateModal}
+                  type="button"
+                >
+                  Отмена
+                </button>
+                <button
+                  className="createModalPrimary"
+                  disabled={isWorkspaceLoading || !createName.trim()}
+                  type="submit"
+                >
+                  Создать
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {renameDraft && (
+        <div className="modalBackdrop">
+          <section className="createModal" aria-modal="true" role="dialog">
+            <div className="createModalHeader">
+              <div className="createModalIcon">✎</div>
+              <div>
+                <h2>Переименовать канал</h2>
+              </div>
+            </div>
+
+            <form className="createModalForm" onSubmit={handleRenameChannel}>
+              <input
+                autoFocus
+                value={renameDraft.name}
+                onChange={(event) =>
+                  setRenameDraft((draft) =>
+                    draft
+                      ? {
+                          ...draft,
+                          name: event.target.value,
+                        }
+                      : draft,
+                  )
+                }
+                placeholder="Название канала"
+              />
+
+              <div className="createModalActions">
+                <button
+                  className="createModalSecondary"
+                  disabled={isWorkspaceLoading}
+                  onClick={closeRenameModal}
+                  type="button"
+                >
+                  Отмена
+                </button>
+                <button
+                  className="createModalPrimary"
+                  disabled={isWorkspaceLoading || !renameDraft.name.trim()}
+                  type="submit"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       <VoicePanel
         state={voice.state}

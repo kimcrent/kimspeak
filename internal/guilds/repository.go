@@ -83,8 +83,11 @@ func (r *Repository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]Guil
 	rows, err := r.db.Query(ctx, `
 		SELECT g.id, g.name, g.owner_id, g.created_at, g.updated_at
 		FROM guilds g
-		JOIN guild_members gm ON gm.guild_id = g.id
-		WHERE gm.user_id = $1
+		LEFT JOIN guild_members gm
+			ON gm.guild_id = g.id
+			AND gm.user_id = $1
+		WHERE g.owner_id = $1
+			OR gm.user_id = $1
 		ORDER BY g.created_at DESC
 	`, userID)
 	if err != nil {
@@ -125,11 +128,14 @@ func (r *Repository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]Guil
 			g.owner_id,
 			g.created_at,
 			g.updated_at
-		FROM guilds g
-		JOIN guild_members gm ON gm.guild_id = g.id
-		WHERE gm.user_id = $1
-		ORDER BY g.created_at DESC
-	`
+			FROM guilds g
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = g.id
+				AND gm.user_id = $1
+			WHERE g.owner_id = $1
+				OR gm.user_id = $1
+			ORDER BY g.created_at DESC
+		`
 
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {

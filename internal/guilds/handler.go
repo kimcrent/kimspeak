@@ -11,23 +11,27 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/kimcrent/kimspeak/internal/auth"
 	"github.com/kimcrent/kimspeak/internal/guildmembers"
+	"github.com/kimcrent/kimspeak/internal/invitations"
 	"github.com/kimcrent/kimspeak/internal/users"
 )
 
 type Handler struct {
 	guildsRepo       *Repository
 	guildMembersRepo *guildmembers.Repository
+	invitationsRepo  *invitations.Repository
 	usersRepo        *users.Repository
 }
 
 func NewHandler(
 	guildsRepo *Repository,
 	guildMembersRepo *guildmembers.Repository,
+	invitationsRepo *invitations.Repository,
 	usersRepo *users.Repository,
 ) *Handler {
 	return &Handler{
 		guildsRepo:       guildsRepo,
 		guildMembersRepo: guildMembersRepo,
+		invitationsRepo:  invitationsRepo,
 		usersRepo:        usersRepo,
 	}
 }
@@ -53,7 +57,7 @@ type inviteGuildMemberRequest struct {
 }
 
 type inviteGuildMemberResponse struct {
-	Member guildmembers.ChannelMember `json:"member"`
+	Invitation invitations.Invitation `json:"invitation"`
 }
 
 func (h *Handler) HandleGuilds(w http.ResponseWriter, r *http.Request) {
@@ -272,22 +276,30 @@ func (h *Handler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.guildMembersRepo.AddMember(r.Context(), guildID, invitee.ID, "member"); err != nil {
+	isAlreadyMember, err := h.guildsRepo.IsMember(r.Context(), guildID.String(), invitee.ID)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": "failed to invite user",
+			"error": "failed to check invitee membership",
 		})
 		return
 	}
 
-	member, err := h.guildMembersRepo.FindByGuildAndUser(r.Context(), guildID, invitee.ID)
+	if isAlreadyMember {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "user is already in this guild",
+		})
+		return
+	}
+
+	invitation, err := h.invitationsRepo.Create(r.Context(), guildID, inviterID, invitee.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": "failed to get invited user",
+			"error": "failed to create invitation",
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, inviteGuildMemberResponse{
-		Member: member,
+		Invitation: invitation,
 	})
 }

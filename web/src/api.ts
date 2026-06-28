@@ -41,6 +41,16 @@ export type ChannelMember = {
   role: "owner" | "admin" | "member";
 };
 
+export type GuildInvitation = {
+  id: string;
+  guild_id: string;
+  guild_name: string;
+  inviter_id: string;
+  inviter_username: string;
+  status: "pending" | "accepted" | "declined";
+  created_at?: string;
+};
+
 export type AuthResponse = {
   token?: string;
   access_token?: string;
@@ -154,8 +164,8 @@ export async function inviteGuildMember(
   token: string,
   guildId: string,
   username: string,
-): Promise<ChannelMember> {
-  const data = await request<{ member: ChannelMember }>(
+): Promise<GuildInvitation> {
+  const data = await request<{ invitation: GuildInvitation }>(
     `/guilds/${guildId}/members`,
     {
       method: "POST",
@@ -164,7 +174,45 @@ export async function inviteGuildMember(
     token,
   );
 
-  return data.member;
+  return data.invitation;
+}
+
+export async function listGuildInvitations(
+  token: string,
+): Promise<GuildInvitation[]> {
+  const data = await request<{ invitations: GuildInvitation[] }>(
+    "/guild-invitations",
+    { method: "GET" },
+    token,
+  );
+
+  return data.invitations || [];
+}
+
+export async function acceptGuildInvitation(
+  token: string,
+  invitationId: string,
+): Promise<GuildInvitation> {
+  const data = await request<{ invitation: GuildInvitation }>(
+    `/guild-invitations/${invitationId}/accept`,
+    { method: "POST" },
+    token,
+  );
+
+  return data.invitation;
+}
+
+export async function declineGuildInvitation(
+  token: string,
+  invitationId: string,
+): Promise<GuildInvitation> {
+  const data = await request<{ invitation: GuildInvitation }>(
+    `/guild-invitations/${invitationId}/decline`,
+    { method: "POST" },
+    token,
+  );
+
+  return data.invitation;
 }
 
 export async function listChannels(token: string, guildId: string): Promise<Channel[]> {
@@ -222,6 +270,19 @@ export async function renameChannel(
   );
 
   return data.channel;
+}
+
+export async function listGuildMembers(
+  token: string,
+  guildId: string,
+): Promise<ChannelMember[]> {
+  const data = await request<{ members: ChannelMember[] }>(
+    `/guilds/${guildId}/members`,
+    { method: "GET" },
+    token,
+  );
+
+  return data.members || [];
 }
 
 export async function listChannelMembers(
