@@ -162,7 +162,7 @@ func (r *Repository) IsOwner(ctx context.Context, guildID string, userID uuid.UU
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS (
 		SELECT 1
-		FROM guild
+		FROM guilds
 		WHERE id = $1 AND owner_id = $2
 		)
 	`, guildID, userID).Scan(&exists)

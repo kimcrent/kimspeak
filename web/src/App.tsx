@@ -14,6 +14,8 @@ import {
   register,
 } from "./api";
 import type { Channel, Guild, Message, User } from "./api";
+import { useVoiceRoom } from "./voice/useVoiceRoom";
+import { VoicePanel } from "./voice/VoicePanel";
 
 type AuthMode = "login" | "register";
 type ChannelDraftType = "text" | "voice";
@@ -36,6 +38,8 @@ function formatTime(value?: string) {
 }
 
 function App() {
+  const voice = useVoiceRoom();
+
   const [mode, setMode] = useState<AuthMode>("login");
   const [username, setUsername] = useState("k1epa");
   const [email, setEmail] = useState("k1epa@example.com");
@@ -83,6 +87,10 @@ function App() {
     () => channels.filter((channel) => channel.type === "voice"),
     [channels],
   );
+
+  const isActiveVoiceChannelJoined =
+    activeChannel?.type === "voice" && voice.currentChannelId === activeChannel.id;
+  const isActiveVoiceConnecting = isActiveVoiceChannelJoined && voice.state === "connecting";
 
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY);
@@ -281,6 +289,41 @@ function App() {
     }
   }
 
+  async function handleCreateVoiceChannel() {
+    if (!token || !activeGuildId) {
+      return;
+    }
+
+    setIsWorkspaceLoading(true);
+    setError("");
+
+    try {
+      const channel = await createChannel(token, activeGuildId, "voice", "voice");
+      setChannels((items) => [...items, channel]);
+      setActiveChannelId(channel.id);
+      setStatus("Голосовой канал создан");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать голосовой канал");
+      setStatus("Ошибка создания канала");
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }
+
+  function handleJoinVoiceChannel(channel: Channel) {
+    setActiveChannelId(channel.id);
+
+    if (!user || voice.currentChannelId === channel.id) {
+      return;
+    }
+
+    voice.joinVoice({
+      channelId: channel.id,
+      channelName: channel.name,
+      userId: user.id,
+    });
+  }
+
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -471,17 +514,44 @@ function App() {
           <div className="channelBlock">
             <div className="channelCategory">Голосовые каналы</div>
             {voiceChannels.map((channel) => (
-              <button
-                className={channel.id === activeChannelId ? "channel active" : "channel"}
-                key={channel.id}
-                onClick={() => setActiveChannelId(channel.id)}
-                type="button"
-              >
-                <span>♪</span>
-                {channel.name}
-              </button>
+              <div className="voiceChannelRow" key={channel.id}>
+                <button
+                  className={
+                    channel.id === activeChannelId || channel.id === voice.currentChannelId
+                      ? "channel active"
+                      : "channel"
+                  }
+                  onClick={() => setActiveChannelId(channel.id)}
+                  type="button"
+                >
+                  <span>♪</span>
+                  {channel.name}
+                </button>
+                <button
+                  className="channelJoinButton"
+                  disabled={voice.currentChannelId === channel.id && voice.state !== "error"}
+                  onClick={() => handleJoinVoiceChannel(channel)}
+                  type="button"
+                >
+                  {voice.currentChannelId === channel.id && voice.state !== "error"
+                    ? "Внутри"
+                    : "Войти"}
+                </button>
+              </div>
             ))}
-            {!voiceChannels.length && <div className="emptyHint">Пока нет голосовых каналов</div>}
+            {!voiceChannels.length && (
+              <div className="emptyHint emptyHintWithAction">
+                <span>Пока нет голосовых каналов</span>
+                <button
+                  className="emptyActionButton"
+                  disabled={isWorkspaceLoading || !activeGuild}
+                  onClick={handleCreateVoiceChannel}
+                  type="button"
+                >
+                  Создать голосовой
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -560,6 +630,18 @@ function App() {
               <div className="pulse">♪</div>
               <h2>{activeChannel.name}</h2>
               <p>Голосовая комната готова. Текстовые сообщения доступны в каналах с #.</p>
+              <button
+                className="voiceRoomJoinButton"
+                disabled={isActiveVoiceChannelJoined && voice.state !== "error"}
+                onClick={() => handleJoinVoiceChannel(activeChannel)}
+                type="button"
+              >
+                {isActiveVoiceConnecting
+                  ? "Подключаемся..."
+                  : isActiveVoiceChannelJoined && voice.state !== "error"
+                    ? "Вы в канале"
+                    : "Войти в голос"}
+              </button>
             </div>
           )}
 
@@ -652,6 +734,16 @@ function App() {
           </div>
         </div>
       </aside>
+
+      <VoicePanel
+        state={voice.state}
+        error={voice.error}
+        muted={voice.muted}
+        channelName={voice.currentChannelName}
+        remoteStreams={voice.remoteStreams}
+        onToggleMute={voice.toggleMute}
+        onLeave={voice.leaveVoice}
+      />
     </div>
   );
 }

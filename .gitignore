@@ -21,6 +21,7 @@ tmp/
 # Go workspace
 go.work
 go.work.sum
+.gocache/
 
 # Logs
 *.log

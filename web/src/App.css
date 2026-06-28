@@ -364,6 +364,17 @@ input:disabled {
   text-align: left;
 }
 
+.voiceChannelRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 6px;
+  align-items: center;
+}
+
+.voiceChannelRow + .voiceChannelRow {
+  margin-top: 4px;
+}
+
 .channel span {
   width: 16px;
   flex: 0 0 16px;
@@ -375,6 +386,26 @@ input:disabled {
 .channel.active {
   background: #404249;
   color: #ffffff;
+}
+
+.channelJoinButton {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: #23a55a;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.channelJoinButton:hover {
+  background: #2fbe68;
+}
+
+.channelJoinButton:disabled {
+  background: #383a40;
+  color: #b7bbc4;
+  opacity: 1;
 }
 
 .channelCreate {
@@ -516,6 +547,26 @@ input:disabled {
   font-size: 13px;
 }
 
+.emptyHintWithAction {
+  display: grid;
+  gap: 8px;
+}
+
+.emptyActionButton {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: #383a40;
+  color: #dfe1e6;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.emptyActionButton:hover {
+  background: #5865f2;
+  color: #ffffff;
+}
+
 .emptyState,
 .voiceRoom {
   max-width: 560px;
@@ -548,6 +599,27 @@ input:disabled {
   font-size: 34px;
   font-weight: 900;
   box-shadow: 0 0 0 12px rgba(35, 165, 90, 0.14);
+}
+
+.voiceRoomJoinButton {
+  min-width: 168px;
+  min-height: 44px;
+  margin-top: 22px;
+  border: 0;
+  border-radius: 8px;
+  background: #23a55a;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.voiceRoomJoinButton:hover {
+  background: #2fbe68;
+}
+
+.voiceRoomJoinButton:disabled {
+  background: #383a40;
+  color: #b7bbc4;
+  opacity: 1;
 }
 
 .inlineError {
@@ -705,4 +777,69 @@ input:disabled {
   .messageInput button {
     width: 100%;
   }
+}
+
+.voice-panel {
+  position: fixed;
+  left: 240px;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  padding: 14px 16px;
+  border: 1px solid #2f3136;
+  border-radius: 12px;
+
+  background: #1e1f22;
+  color: #ffffff;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.voice-panel__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-panel__title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.voice-panel__subtitle {
+  font-size: 12px;
+  color: #b5bac1;
+}
+
+.voice-panel__error {
+  font-size: 12px;
+  color: #ff6b6b;
+}
+
+.voice-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.voice-panel__actions button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+
+  background: #313338;
+  color: #ffffff;
+}
+
+.voice-panel__actions button:hover {
+  background: #3f4248;
+}
+
+.voice-panel__audios {
+  display: none;
 }
