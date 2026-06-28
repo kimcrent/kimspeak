@@ -321,6 +321,8 @@ function App() {
       channelId: channel.id,
       channelName: channel.name,
       userId: user.id,
+      username: user.username,
+
     });
   }
 

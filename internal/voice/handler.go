@@ -29,6 +29,11 @@ var upgrader = websocket.Upgrader{
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	channelID := r.URL.Query().Get("channel_id")
 	userID := r.URL.Query().Get("user_id")
+	username := r.URL.Query().Get("username")
+
+	if username == "" {
+		username = userID
+	}
 
 	if channelID == "" {
 		http.Error(w, "channel_id is required", http.StatusBadRequest)
@@ -78,13 +83,14 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	room := h.sfu.GetRoom(channelID)
 
 	peer := &Peer{
-		UserID:  userID,
-		RoomID:  channelID,
-		pc:      pc,
-		ws:      ws,
-		Room:    room,
-		logger:  h.logger,
-		senders: make(map[string]*webrtc.RTPSender),
+		UserID:   userID,
+		Username: username,
+		RoomID:   channelID,
+		pc:       pc,
+		ws:       ws,
+		Room:     room,
+		logger:   h.logger,
+		senders:  make(map[string]*webrtc.RTPSender),
 	}
 
 	room.AddPeer(peer)

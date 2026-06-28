@@ -53,6 +53,44 @@ func NewRoom(id string, logger *slog.Logger) *Room {
 	}
 }
 
+func (r *Room) BroadcastVoiceState() {
+	users, peers := r.snapshotVoiceState()
+
+	msg := SignalMessage{
+		Type:  MessageTypeVoiceState,
+		Users: users,
+	}
+
+	for _, peer := range peers {
+		if err := peer.ws.WriteJSON(msg); err != nil {
+			r.logger.Warn(
+				"failed to send voice state",
+				"room_id", r.id,
+				"user_id", peer.UserID,
+				"error", err,
+			)
+		}
+	}
+}
+
+func (r *Room) snapshotVoiceState() ([]VoiceUser, []*Peer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	users := make([]VoiceUser, 0, len(r.peers))
+	peers := make([]*Peer, 0, len(r.peers))
+
+	for _, peer := range r.peers {
+		users = append(users, VoiceUser{
+			ID:       peer.UserID,
+			Username: peer.Username,
+		})
+
+		peers = append(peers, peer)
+	}
+	return users, peers
+}
+
 type RelayTrack struct {
 	ID      string
 	OwnerID string
@@ -60,8 +98,9 @@ type RelayTrack struct {
 }
 
 type Peer struct {
-	UserID string
-	RoomID string
+	UserID   string
+	Username string
+	RoomID   string
 
 	pc *webrtc.PeerConnection
 	ws *SafeWS
@@ -101,6 +140,7 @@ func (r *Room) AddPeer(peer *Peer) {
 
 		go drainRTCP(sender)
 	}
+	go r.BroadcastVoiceState()
 }
 
 func (r *Room) RemovePeer(peer *Peer) {
@@ -121,6 +161,7 @@ func (r *Room) RemovePeer(peer *Peer) {
 			go otherPeer.negotiate()
 		}
 	}
+	go r.BroadcastVoiceState()
 }
 
 func (r *Room) AddRelayTrack(ownerID string, remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocalStaticRTP, string, error) {

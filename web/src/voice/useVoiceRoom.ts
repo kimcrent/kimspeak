@@ -1,10 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 
+
+
+type VoiceUser = {
+  id:string,
+  username:string,
+};
+
 type SignalMessage = {
-  type: "offer" | "answer" | "candidate" | "error";
+  type: "offer" | "answer" | "candidate" | "error"| "voice_state";
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
   error?: string;
+  users?: VoiceUser[];
 };
 
 type VoiceState = "idle" | "connecting" | "connected" | "error";
@@ -17,6 +25,7 @@ export function useVoiceRoom() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
+  const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [currentChannelId, setCurrentChannelId] = useState<string | null>(null);
@@ -61,6 +70,7 @@ export function useVoiceRoom() {
     setCurrentChannelId(null);
     setCurrentChannelName(null);
     setRemoteStreams([]);
+    setVoiceUsers([]);
     setMuted(false);
   }, []);
 
@@ -69,8 +79,9 @@ export function useVoiceRoom() {
       channelId: string;
       channelName: string;
       userId: string;
+      username: string;
     }) => {
-      const { channelId, channelName, userId } = params;
+      const { channelId, channelName, userId, username } = params;
 
       if (!channelId || !userId) {
         setError("channelId и userId обязательны");
@@ -175,7 +186,9 @@ export function useVoiceRoom() {
         const ws = new WebSocket(
           `${WS_URL}/voice/ws?channel_id=${encodeURIComponent(
             channelId,
-          )}&user_id=${encodeURIComponent(userId)}`,
+          )}&user_id=${encodeURIComponent(userId)}&username=${encodeURIComponent(
+            username,
+          )}`,
         );
 
         wsRef.current = ws;
@@ -192,6 +205,11 @@ export function useVoiceRoom() {
 
         ws.onmessage = async (event) => {
           const message = JSON.parse(event.data) as SignalMessage;
+
+          if (message.type === "voice_state") {
+            setVoiceUsers(message.users ?? []);
+            return;
+          }
 
           if (message.type === "answer") {
             if (!message.sdp) {
@@ -279,6 +297,7 @@ export function useVoiceRoom() {
     currentChannelId,
     currentChannelName,
     remoteStreams,
+    voiceUsers,
     joinVoice,
     leaveVoice,
     toggleMute,
