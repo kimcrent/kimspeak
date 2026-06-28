@@ -48,16 +48,8 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	ws := NewSafeWS(conn)
 
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{
+	pc, err := newPeerConnection()
 
-					"stun:stun.1.google.com:19302",
-				},
-			},
-		},
-	})
 	if err != nil {
 		_ = ws.WriteJSON(SignalMessage{
 			Type:  MessageTypeError,
@@ -242,4 +234,39 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func newPeerConnection() (*webrtc.PeerConnection, error) {
+	mediaEngine := &webrtc.MediaEngine{}
+
+	err := mediaEngine.RegisterCodec(
+		webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeOpus,
+				ClockRate:    48000,
+				Channels:     2,
+				SDPFmtpLine:  "minptime=10;useinbandfec=1",
+				RTCPFeedback: nil,
+			},
+			PayloadType: 111,
+		},
+		webrtc.RTPCodecTypeAudio,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	api := webrtc.NewAPI(
+		webrtc.WithMediaEngine(mediaEngine),
+	)
+
+	return api.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{
+					"stun:stun.l.google.com:19302",
+				},
+			},
+		},
+	})
 }

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kimspeak Voice Test</title>
+  </head>
+  <body>
+    <h1>Kimspeak Voice Test</h1>
+
+    <div>
+      <label>
+        Channel ID:
+        <input id="channelId" value="general" />
+      </label>
+    </div>
+
+    <div>
+      <label>
+        User ID:
+        <input id="userId" value="" />
+      </label>
+    </div>
+
+    <button id="connectBtn">Join voice</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+
+    <pre id="log"></pre>
+
+    <h2>Remote audio</h2>
+    <div id="remoteAudios"></div>
+
+    <script>
+      const channelInput = document.getElementById("channelId");
+      const userInput = document.getElementById("userId");
+      const connectBtn = document.getElementById("connectBtn");
+      const disconnectBtn = document.getElementById("disconnectBtn");
+      const logEl = document.getElementById("log");
+      const remoteAudios = document.getElementById("remoteAudios");
+
+      userInput.value = crypto.randomUUID();
+
+      let ws = null;
+      let pc = null;
+      let localStream = null;
+
+      function log(...args) {
+        console.log(...args);
+        logEl.textContent += args.map(String).join(" ") + "\n";
+      }
+
+      function send(message) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          log("WebSocket is not open");
+          return;
+        }
+
+        ws.send(JSON.stringify(message));
+      }
+
+      async function joinVoice() {
+        const channelId = channelInput.value.trim();
+        const userId = userInput.value.trim();
+
+        if (!channelId || !userId) {
+          alert("channel_id и user_id обязательны");
+          return;
+        }
+
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: 48000,
+          },
+          video: false,
+        });
+
+        log("Microphone access granted");
+
+        pc = new RTCPeerConnection({
+          iceServers: [
+            {
+              urls: "stun:stun.l.google.com:19302",
+            },
+          ],
+        });
+
+        pc.onicecandidate = (event) => {
+          if (!event.candidate) {
+            return;
+          }
+
+          send({
+            type: "candidate",
+            candidate: event.candidate,
+          });
+        };
+
+        pc.onconnectionstatechange = () => {
+          log("PeerConnection state:", pc.connectionState);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          log("ICE state:", pc.iceConnectionState);
+        };
+        setInterval(async () => {
+          if (!pc) {
+            return;
+          }
+
+          const stats = await pc.getStats();
+
+          stats.forEach((report) => {
+            if (report.type === "inbound-rtp" && report.kind === "audio") {
+              log(
+                "Audio stats:",
+                "lost=" + report.packetsLost,
+                "jitter=" + report.jitter,
+              );
+            }
+          });
+        }, 5000);
+
+        pc.ontrack = (event) => {
+          log("Remote track received:", event.track.kind);
+
+          const stream = event.streams[0];
+
+          let audio = document.getElementById("audio-" + stream.id);
+          if (!audio) {
+            audio = document.createElement("audio");
+            audio.id = "audio-" + stream.id;
+            audio.autoplay = true;
+            audio.controls = true;
+            audio.srcObject = stream;
+            remoteAudios.appendChild(audio);
+          }
+        };
+
+        for (const track of localStream.getTracks()) {
+          const sender = pc.addTrack(track, localStream);
+
+          if (track.kind === "audio") {
+            const params = sender.getParameters();
+
+            if (!params.encodings) {
+              params.encodings = [{}];
+            }
+
+            params.encodings[0].maxBitrate = 64000;
+
+            try {
+              await sender.setParameters(params);
+              log("Audio sender bitrate set to 64 kbps");
+            } catch (err) {
+              log("Failed to set audio bitrate:", err.message);
+            }
+          }
+        }
+
+        ws = new WebSocket(
+          `ws://localhost:8080/voice/ws?channel_id=${encodeURIComponent(channelId)}&user_id=${encodeURIComponent(userId)}`,
+        );
+
+        ws.onopen = async () => {
+          log("WebSocket connected");
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          send({
+            type: "offer",
+            sdp: pc.localDescription,
+          });
+
+          log("Client offer sent");
+        };
+
+        ws.onmessage = async (event) => {
+          const message = JSON.parse(event.data);
+
+          log("Signal received:", message.type);
+
+          if (message.type === "answer") {
+            await pc.setRemoteDescription(message.sdp);
+            log("Server answer applied");
+            return;
+          }
+
+          if (message.type === "offer") {
+            await pc.setRemoteDescription(message.sdp);
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            send({
+              type: "answer",
+              sdp: pc.localDescription,
+            });
+
+            log("Server offer answered");
+            return;
+          }
+
+          if (message.type === "candidate") {
+            if (message.candidate) {
+              await pc.addIceCandidate(message.candidate);
+              log("ICE candidate added");
+            }
+
+            return;
+          }
+
+          if (message.type === "error") {
+            log("Server error:", message.error);
+          }
+        };
+
+        ws.onclose = () => {
+          log("WebSocket closed");
+        };
+
+        ws.onerror = (event) => {
+          log("WebSocket error", event);
+        };
+      }
+
+      function disconnect() {
+        if (localStream) {
+          for (const track of localStream.getTracks()) {
+            track.stop();
+          }
+        }
+
+        if (pc) {
+          pc.close();
+        }
+
+        if (ws) {
+          ws.close();
+        }
+
+        localStream = null;
+        pc = null;
+        ws = null;
+
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+
+        log("Disconnected");
+      }
+
+      connectBtn.addEventListener("click", joinVoice);
+      disconnectBtn.addEventListener("click", disconnect);
+    </script>
+  </body>
+</html>
