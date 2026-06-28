@@ -52,5 +52,5 @@ func (s *Server) NewRouter() http.Handler {
 	mux.Handle("POST /channels/{channel_id}/messages", authHandler.AuthMiddleware(http.HandlerFunc(messagesHandler.Create)))
 	mux.Handle("GET /channels/{channel_id}/messages", authHandler.AuthMiddleware(http.HandlerFunc(messagesHandler.ListByChannel)))
 
-	return mux
+	return withCORS(mux)
 }

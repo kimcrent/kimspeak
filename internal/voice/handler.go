@@ -3,20 +3,30 @@ package voice
 import (
 	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
 )
 
 type Handler struct {
 	sfu    *SFU
 	logger *slog.Logger
+	api    *webrtc.API
 }
 
 func NewHandler(logger *slog.Logger) *Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Handler{
 		sfu:    NewSFU(logger),
 		logger: logger,
+		api:    newWebRTCAPI(logger),
 	}
 }
 
@@ -53,7 +63,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	ws := NewSafeWS(conn)
 
-	pc, err := newPeerConnection()
+	pc, err := h.newPeerConnection()
 
 	if err != nil {
 		_ = ws.WriteJSON(SignalMessage{
@@ -238,14 +248,19 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			if msg.Candidate == nil {
 				continue
 			}
+
+			if err := pc.AddICECandidate(*msg.Candidate); err != nil {
+				h.logger.Warn("failed to add remote ICE candidate", "user_id", userID, "error", err)
+				continue
+			}
 		}
 	}
 }
 
-func newPeerConnection() (*webrtc.PeerConnection, error) {
+func newWebRTCAPI(logger *slog.Logger) *webrtc.API {
 	mediaEngine := &webrtc.MediaEngine{}
 
-	err := mediaEngine.RegisterCodec(
+	if err := mediaEngine.RegisterCodec(
 		webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
 				MimeType:     webrtc.MimeTypeOpus,
@@ -257,16 +272,43 @@ func newPeerConnection() (*webrtc.PeerConnection, error) {
 			PayloadType: 111,
 		},
 		webrtc.RTPCodecTypeAudio,
-	)
-	if err != nil {
-		return nil, err
+	); err != nil {
+		logger.Error("failed to register opus codec", "error", err)
+		return webrtc.NewAPI()
 	}
 
-	api := webrtc.NewAPI(
-		webrtc.WithMediaEngine(mediaEngine),
-	)
+	settingEngine := webrtc.SettingEngine{}
 
-	return api.NewPeerConnection(webrtc.Configuration{
+	publicIP := strings.TrimSpace(os.Getenv("WEBRTC_PUBLIC_IP"))
+	if publicIP != "" {
+		settingEngine.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
+		logger.Info("configured WebRTC public IP", "public_ip", publicIP)
+	}
+
+	udpPortValue := strings.TrimSpace(os.Getenv("WEBRTC_UDP_PORT"))
+	if udpPortValue != "" {
+		udpPort, err := strconv.ParseUint(udpPortValue, 10, 16)
+		if err != nil || udpPort == 0 {
+			logger.Error("invalid WEBRTC_UDP_PORT", "value", udpPortValue, "error", err)
+		} else {
+			mux, err := ice.NewMultiUDPMuxFromPort(int(udpPort))
+			if err != nil {
+				logger.Error("failed to configure WebRTC UDP mux", "port", udpPort, "error", err)
+			} else {
+				settingEngine.SetICEUDPMux(mux)
+				logger.Info("configured WebRTC UDP mux", "port", udpPort)
+			}
+		}
+	}
+
+	return webrtc.NewAPI(
+		webrtc.WithMediaEngine(mediaEngine),
+		webrtc.WithSettingEngine(settingEngine),
+	)
+}
+
+func (h *Handler) newPeerConnection() (*webrtc.PeerConnection, error) {
+	return h.api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
 				URLs: []string{

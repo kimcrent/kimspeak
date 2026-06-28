@@ -1,14 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 
-
-
 type VoiceUser = {
-  id:string,
-  username:string,
+  id: string;
+  username: string;
 };
 
 type SignalMessage = {
-  type: "offer" | "answer" | "candidate" | "error"| "voice_state";
+  type: "offer" | "answer" | "candidate" | "error" | "voice_state";
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
   error?: string;
@@ -17,8 +15,44 @@ type SignalMessage = {
 
 type VoiceState = "idle" | "connecting" | "connected" | "error";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
-const WS_URL = API_URL.replace(/^http/, "ws");
+const API_BASE_URL = normalizeBaseUrl(
+  import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_BASE_URL,
+);
+const WS_URL = toWebSocketBaseUrl(API_BASE_URL);
+
+function normalizeBaseUrl(baseUrl?: string): string {
+  const normalized = baseUrl?.trim() || "/api";
+  return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+}
+
+function toWebSocketBaseUrl(baseUrl: string): string {
+  if (baseUrl.startsWith("/")) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${baseUrl}`;
+  }
+
+  return baseUrl.replace(/^http/i, "ws");
+}
+
+function getVoiceErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return "Не удалось войти в голосовой канал";
+  }
+
+  if (err.name === "NotAllowedError") {
+    return "Нет доступа к микрофону. Разрешите KIMSpeak доступ к микрофону в настройках macOS.";
+  }
+
+  if (err.name === "NotFoundError") {
+    return "Микрофон не найден. Проверьте устройство ввода в macOS.";
+  }
+
+  if (err.name === "NotReadableError") {
+    return "Микрофон занят другим приложением или недоступен.";
+  }
+
+  return err.message || "Не удалось войти в голосовой канал";
+}
 
 export function useVoiceRoom() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -142,7 +176,8 @@ export function useVoiceRoom() {
             pc.connectionState === "closed" ||
             pc.connectionState === "disconnected"
           ) {
-            setState("idle");
+            setError(`WebRTC соединение ${pc.connectionState}`);
+            setState("error");
           }
         };
 
@@ -183,95 +218,124 @@ export function useVoiceRoom() {
           }
         }
 
-        const ws = new WebSocket(
-          `${WS_URL}/voice/ws?channel_id=${encodeURIComponent(
+        const wsUrl = `${WS_URL}/voice/ws?channel_id=${encodeURIComponent(
             channelId,
           )}&user_id=${encodeURIComponent(userId)}&username=${encodeURIComponent(
             username,
-          )}`,
-        );
+          )}`;
+        const ws = new WebSocket(wsUrl);
+        let wsOpened = false;
 
         wsRef.current = ws;
 
         ws.onopen = async () => {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+          wsOpened = true;
 
-          sendSignal({
-            type: "offer",
-            sdp: pc.localDescription ?? undefined,
-          });
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            sendSignal({
+              type: "offer",
+              sdp: pc.localDescription ?? undefined,
+            });
+          } catch (err) {
+            setError(getVoiceErrorMessage(err));
+            setState("error");
+            leaveVoice();
+          }
         };
 
         ws.onmessage = async (event) => {
-          const message = JSON.parse(event.data) as SignalMessage;
+          try {
+            const message = JSON.parse(event.data) as SignalMessage;
 
-          if (message.type === "voice_state") {
-            setVoiceUsers(message.users ?? []);
-            return;
-          }
-
-          if (message.type === "answer") {
-            if (!message.sdp) {
+            if (message.type === "voice_state") {
+              setVoiceUsers(message.users ?? []);
               return;
             }
 
-            await pc.setRemoteDescription(message.sdp);
-            return;
-          }
+            if (message.type === "answer") {
+              if (!message.sdp) {
+                return;
+              }
 
-          if (message.type === "offer") {
-            if (!message.sdp) {
+              await pc.setRemoteDescription(message.sdp);
               return;
             }
 
-            await pc.setRemoteDescription(message.sdp);
+            if (message.type === "offer") {
+              if (!message.sdp) {
+                return;
+              }
 
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+              await pc.setRemoteDescription(message.sdp);
 
-            sendSignal({
-              type: "answer",
-              sdp: pc.localDescription ?? undefined,
-            });
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
 
-            return;
-          }
+              sendSignal({
+                type: "answer",
+                sdp: pc.localDescription ?? undefined,
+              });
 
-          if (message.type === "candidate") {
-            if (!message.candidate) {
               return;
             }
 
-            await pc.addIceCandidate(message.candidate);
-            return;
-          }
+            if (message.type === "candidate") {
+              if (!message.candidate) {
+                return;
+              }
 
-          if (message.type === "error") {
-            setError(message.error ?? "Ошибка voice-сервера");
+              await pc.addIceCandidate(message.candidate);
+              return;
+            }
+
+            if (message.type === "error") {
+              setError(message.error ?? "Ошибка voice-сервера");
+              setState("error");
+            }
+          } catch (err) {
+            setError(getVoiceErrorMessage(err));
             setState("error");
           }
         };
 
         ws.onerror = () => {
-          setError("Ошибка WebSocket voice-подключения");
+          setError(`Не удалось подключиться к voice WebSocket (${wsUrl})`);
           setState("error");
         };
 
-        ws.onclose = () => {
-          if (state !== "idle") {
-            setState("idle");
+        ws.onclose = (event) => {
+          if (!wsOpened) {
+            setError(`Voice WebSocket закрылся до подключения (${event.code})`);
+            setState("error");
+            return;
           }
+
+          if (event.code !== 1000) {
+            setError(`Voice WebSocket закрыт (${event.code})`);
+            setState("error");
+            return;
+          }
+
+          setState((current) => {
+            if (current === "error") {
+              return current;
+            }
+
+            return "idle";
+          });
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Не удалось войти в голосовой канал";
+        const message = getVoiceErrorMessage(err);
 
         setError(message);
         setState("error");
         leaveVoice();
       }
     },
-    [leaveVoice, sendSignal, state],
+    [leaveVoice, sendSignal],
   );
 
   const toggleMute = useCallback(() => {

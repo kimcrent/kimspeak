@@ -1,4 +1,36 @@
-const API_BASE_URL = "/api";
+import { invoke } from "@tauri-apps/api/core";
+
+const API_BASE_URL = normalizeBaseUrl(
+  import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_BASE_URL,
+);
+
+type TauriApiResponse = {
+  ok: boolean;
+  status: number;
+  text: string;
+  contentType?: string | null;
+};
+
+function normalizeBaseUrl(baseUrl?: string): string {
+  const normalized = baseUrl?.trim() || "/api";
+  return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+}
+
+function isTauriRuntime(): boolean {
+  return "__TAURI_INTERNALS__" in window;
+}
+
+function getJsonBody(body: BodyInit | null | undefined): unknown {
+  if (!body) {
+    return null;
+  }
+
+  if (typeof body !== "string") {
+    throw new Error("Tauri API bridge поддерживает только JSON body");
+  }
+
+  return JSON.parse(body);
+}
 
 export type User = {
   id: string;
@@ -77,20 +109,58 @@ async function request<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let ok: boolean;
+  let status: number;
+  let text: string;
+  let contentType: string;
 
-  const text = await response.text();
-  const contentType = response.headers.get("content-type") || "";
+  if (!import.meta.env.DEV && isTauriRuntime()) {
+    try {
+      const response = await invoke<TauriApiResponse>("api_request", {
+        request: {
+          baseUrl: API_BASE_URL,
+          path,
+          method: options.method || "GET",
+          headers,
+          body: getJsonBody(options.body),
+        },
+      });
+
+      ok = response.ok;
+      status = response.status;
+      text = response.text;
+      contentType = response.contentType || "";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "сетевой сбой";
+      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`);
+    }
+  } else {
+    const url = `${API_BASE_URL}${path}`;
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "сетевой сбой";
+      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`);
+    }
+
+    ok = response.ok;
+    status = response.status;
+    text = await response.text();
+    contentType = response.headers.get("content-type") || "";
+  }
+
   const data = text && contentType.includes("application/json") ? JSON.parse(text) : text;
 
-  if (!response.ok) {
+  if (!ok) {
     const message =
       typeof data === "object" && data && "error" in data
         ? String(data.error)
-        : text || `Ошибка запроса: ${response.status}`;
+        : text || `Ошибка запроса: ${status}`;
 
     throw new Error(message);
   }
