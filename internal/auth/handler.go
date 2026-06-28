@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,9 +37,11 @@ type loginRequest struct {
 }
 
 type userResponse struct {
-	ID       uuid.UUID `json:"id"`
-	Username string    `json:"username"`
-	Email    string    `json:"email"`
+	ID        uuid.UUID `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type registerResponse struct {
@@ -54,11 +57,13 @@ type meResponse struct {
 	User userResponse `json:"user"`
 }
 
-func toUserResponse(user *users.User) userResponse {
+func toUserResponse(user users.User) userResponse {
 	return userResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
 	}
 }
 
@@ -116,7 +121,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, registerResponse{
-		User: toUserResponse(&user),
+		User: toUserResponse(user),
 	})
 }
 
@@ -155,7 +160,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
+	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": "invalid email or password",
 		})
@@ -171,7 +177,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, loginResponse{
-		User:        toUserResponse(&user),
+		User:        toUserResponse(user),
 		AccessToken: accessToken,
 	})
 }
@@ -201,13 +207,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, meResponse{
-		User: toUserResponse(user),
+		User: toUserResponse(*user),
 	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.WriteHeader(status)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(data)
 }
