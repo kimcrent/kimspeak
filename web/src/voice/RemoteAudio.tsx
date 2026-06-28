@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 
 type RemoteAudioProps = {
   stream: MediaStream;
+  volume: number;
 };
 
-export function RemoteAudio({ stream }: RemoteAudioProps) {
+export function RemoteAudio({ stream, volume }: RemoteAudioProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -13,7 +14,8 @@ export function RemoteAudio({ stream }: RemoteAudioProps) {
     }
 
     audioRef.current.srcObject = stream;
-  }, [stream]);
+    audioRef.current.volume = volume;
+  }, [stream, volume]);
 
   return <audio ref={audioRef} autoPlay />;
 }

@@ -92,9 +92,10 @@ func (r *Room) snapshotVoiceState() ([]VoiceUser, []*Peer) {
 }
 
 type RelayTrack struct {
-	ID      string
-	OwnerID string
-	Track   *webrtc.TrackLocalStaticRTP
+	ID        string
+	OwnerID   string
+	OwnerPeer *Peer
+	Track     *webrtc.TrackLocalStaticRTP
 }
 
 type Peer struct {
@@ -115,8 +116,14 @@ type Peer struct {
 }
 
 func (r *Room) AddPeer(peer *Peer) {
+	var previousPeer *Peer
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
+
+	if existingPeer, ok := r.peers[peer.UserID]; ok && existingPeer != peer {
+		previousPeer = existingPeer
+		r.removePeerLocked(existingPeer)
+	}
 
 	r.peers[peer.UserID] = peer
 
@@ -140,35 +147,61 @@ func (r *Room) AddPeer(peer *Peer) {
 
 		go drainRTCP(sender)
 	}
+
+	r.mu.Unlock()
+
+	if previousPeer != nil {
+		previousPeer.close()
+	}
+
 	go r.BroadcastVoiceState()
 }
 
 func (r *Room) RemovePeer(peer *Peer) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	changed := r.removePeerLocked(peer)
+	r.mu.Unlock()
 
-	delete(r.peers, peer.UserID)
-
-	for trackID, relayTrack := range r.tracks {
-		if relayTrack.OwnerID != peer.UserID {
-			continue
-		}
-
-		delete(r.tracks, trackID)
-
-		for _, otherPeer := range r.peers {
-			otherPeer.removeSender(trackID)
-			go otherPeer.negotiate()
-		}
+	if !changed {
+		return
 	}
+
 	go r.BroadcastVoiceState()
 }
 
-func (r *Room) AddRelayTrack(ownerID string, remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocalStaticRTP, string, error) {
+func (r *Room) removePeerLocked(peer *Peer) bool {
+	changed := false
+
+	if currentPeer, ok := r.peers[peer.UserID]; ok && currentPeer == peer {
+		delete(r.peers, peer.UserID)
+		changed = true
+	}
+
+	for trackID, relayTrack := range r.tracks {
+		if relayTrack.OwnerPeer != peer {
+			continue
+		}
+
+		r.removeRelayTrackLocked(trackID)
+		changed = true
+	}
+
+	return changed
+}
+
+func (r *Room) AddRelayTrack(ownerPeer *Peer, remoteTrack *webrtc.TrackRemote) (*webrtc.TrackLocalStaticRTP, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	trackID := fmt.Sprintf("%s_%s", ownerID, remoteTrack.ID())
+	for trackID, relayTrack := range r.tracks {
+		if relayTrack.OwnerPeer != ownerPeer {
+			continue
+		}
+
+		r.removeRelayTrackLocked(trackID)
+	}
+
+	trackID := fmt.Sprintf("%s_%p_%s", ownerPeer.UserID, ownerPeer, remoteTrack.ID())
 
 	localTrack, err := webrtc.NewTrackLocalStaticRTP(
 		remoteTrack.Codec().RTPCodecCapability,
@@ -180,30 +213,31 @@ func (r *Room) AddRelayTrack(ownerID string, remoteTrack *webrtc.TrackRemote) (*
 	}
 
 	r.tracks[trackID] = &RelayTrack{
-		ID:      trackID,
-		OwnerID: ownerID,
-		Track:   localTrack,
+		ID:        trackID,
+		OwnerID:   ownerPeer.UserID,
+		OwnerPeer: ownerPeer,
+		Track:     localTrack,
 	}
 
-	for _, peer := range r.peers {
-		if peer.UserID == ownerID {
+	for _, receiverPeer := range r.peers {
+		if receiverPeer.UserID == ownerPeer.UserID {
 			continue
 		}
-		sender, err := peer.pc.AddTrack(localTrack)
+		sender, err := receiverPeer.pc.AddTrack(localTrack)
 		if err != nil {
 			r.logger.Warn(
 				"failed to add relay track to peer",
 				"room_id", r.id,
-				"user_id", peer.UserID,
+				"user_id", receiverPeer.UserID,
 				"track_id", trackID,
 				"error", err,
 			)
 			continue
 		}
-		peer.senders[trackID] = sender
+		receiverPeer.senders[trackID] = sender
 
 		go drainRTCP(sender)
-		go peer.negotiate()
+		go receiverPeer.negotiate()
 	}
 	return localTrack, trackID, nil
 }
@@ -212,6 +246,10 @@ func (r *Room) RemoveRelayTrack(trackID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.removeRelayTrackLocked(trackID)
+}
+
+func (r *Room) removeRelayTrackLocked(trackID string) {
 	delete(r.tracks, trackID)
 
 	for _, peer := range r.peers {
@@ -239,6 +277,11 @@ func (p *Peer) removeSender(trackID string) {
 			"error", err,
 		)
 	}
+}
+
+func (p *Peer) close() {
+	_ = p.pc.Close()
+	_ = p.ws.Close()
 }
 
 func (p *Peer) negotiate() {

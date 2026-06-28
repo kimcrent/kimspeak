@@ -1375,8 +1375,13 @@ function App() {
         muted={voice.muted}
         channelName={voice.currentChannelName}
         remoteStreams={voice.remoteStreams}
+        settings={voice.settings}
+        inputDevices={voice.inputDevices}
+        inputLevel={voice.inputLevel}
         onToggleMute={voice.toggleMute}
         onLeave={voice.leaveVoice}
+        onRefreshDevices={voice.refreshInputDevices}
+        onSettingsChange={voice.setVoiceSettings}
       />
     </div>
   );

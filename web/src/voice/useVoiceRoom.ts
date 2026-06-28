@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type VoiceUser = {
   id: string;
@@ -14,6 +14,28 @@ type SignalMessage = {
 };
 
 type VoiceState = "idle" | "connecting" | "connected" | "error";
+
+export type VoiceSettings = {
+  inputDeviceId: string;
+  inputGain: number;
+  outputVolume: number;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
+  highPassFilter: boolean;
+};
+
+const VOICE_SETTINGS_KEY = "kimspeak_voice_settings";
+
+const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
+  inputDeviceId: "",
+  inputGain: 1,
+  outputVolume: 1,
+  noiseSuppression: true,
+  echoCancellation: true,
+  autoGainControl: true,
+  highPassFilter: false,
+};
 
 const API_BASE_URL = normalizeBaseUrl(
   import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_BASE_URL,
@@ -54,10 +76,48 @@ function getVoiceErrorMessage(err: unknown): string {
   return err.message || "Не удалось войти в голосовой канал";
 }
 
+function getInitialVoiceSettings(): VoiceSettings {
+  try {
+    const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
+
+    if (!saved) {
+      return DEFAULT_VOICE_SETTINGS;
+    }
+
+    return {
+      ...DEFAULT_VOICE_SETTINGS,
+      ...(JSON.parse(saved) as Partial<VoiceSettings>),
+    };
+  } catch {
+    return DEFAULT_VOICE_SETTINGS;
+  }
+}
+
+function getAudioConstraints(settings: VoiceSettings): MediaTrackConstraints {
+  return {
+    deviceId: settings.inputDeviceId
+      ? {
+          exact: settings.inputDeviceId,
+        }
+      : undefined,
+    echoCancellation: settings.echoCancellation,
+    noiseSuppression: settings.noiseSuppression,
+    autoGainControl: settings.autoGainControl,
+    channelCount: 1,
+    sampleRate: 48000,
+    sampleSize: 16,
+  };
+}
+
 export function useVoiceRoom() {
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const rawStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelFrameRef = useRef<number | null>(null);
 
   const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
   const [state, setState] = useState<VoiceState>("idle");
@@ -66,6 +126,128 @@ export function useVoiceRoom() {
   const [currentChannelName, setCurrentChannelName] = useState<string | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<MediaStream[]>([]);
   const [muted, setMuted] = useState(false);
+  const [settings, setSettingsState] = useState<VoiceSettings>(getInitialVoiceSettings);
+  const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [inputLevel, setInputLevel] = useState(0);
+  const settingsRef = useRef<VoiceSettings>(settings);
+
+  const refreshInputDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setInputDevices([]);
+      return;
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    setInputDevices(devices.filter((device) => device.kind === "audioinput"));
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) {
+      return;
+    }
+
+    navigator.mediaDevices.addEventListener("devicechange", refreshInputDevices);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", refreshInputDevices);
+    };
+  }, [refreshInputDevices]);
+
+  const stopLevelMeter = useCallback(() => {
+    if (levelFrameRef.current !== null) {
+      window.cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
+
+    setInputLevel(0);
+  }, []);
+
+  const startLevelMeter = useCallback(() => {
+    stopLevelMeter();
+
+    const analyser = analyserRef.current;
+
+    if (!analyser) {
+      return;
+    }
+
+    const buffer = new Uint8Array(analyser.fftSize);
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(buffer);
+
+      let sum = 0;
+      for (const value of buffer) {
+        const centered = value - 128;
+        sum += centered * centered;
+      }
+
+      const rms = Math.sqrt(sum / buffer.length) / 128;
+      setInputLevel(Math.min(1, rms * 2.4));
+      levelFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    tick();
+  }, [stopLevelMeter]);
+
+  const setVoiceSettings = useCallback((next: VoiceSettings) => {
+    const normalized = {
+      ...next,
+      inputGain: Math.min(2, Math.max(0, next.inputGain)),
+      outputVolume: Math.min(1, Math.max(0, next.outputVolume)),
+    };
+
+    settingsRef.current = normalized;
+    setSettingsState(normalized);
+    localStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(normalized));
+
+    const gainNode = gainNodeRef.current;
+    if (gainNode) {
+      gainNode.gain.value = normalized.inputGain;
+    }
+
+    const rawTrack = rawStreamRef.current?.getAudioTracks()[0];
+    if (rawTrack) {
+      rawTrack
+        .applyConstraints(getAudioConstraints(normalized))
+        .catch(() => {
+          // Some devices do not support changing processing constraints while active.
+        });
+    }
+  }, []);
+
+  const createProcessedAudioStream = useCallback(async (rawStream: MediaStream) => {
+    const audioContext = new AudioContext({
+      sampleRate: 48000,
+    });
+    const source = audioContext.createMediaStreamSource(rawStream);
+    const analyser = audioContext.createAnalyser();
+    const filterNode = audioContext.createBiquadFilter();
+    const gainNode = audioContext.createGain();
+    const destination = audioContext.createMediaStreamDestination();
+
+    analyser.fftSize = 256;
+    filterNode.type = "highpass";
+    filterNode.frequency.value = 85;
+    gainNode.gain.value = settingsRef.current.inputGain;
+
+    source.connect(analyser);
+    if (settingsRef.current.highPassFilter) {
+      analyser.connect(filterNode);
+      filterNode.connect(gainNode);
+    } else {
+      analyser.connect(gainNode);
+    }
+    gainNode.connect(destination);
+
+    audioContextRef.current = audioContext;
+    gainNodeRef.current = gainNode;
+    analyserRef.current = analyser;
+
+    startLevelMeter();
+
+    return destination.stream;
+  }, [startLevelMeter]);
 
   const sendSignal = useCallback((message: SignalMessage) => {
     const ws = wsRef.current;
@@ -78,11 +260,25 @@ export function useVoiceRoom() {
   }, []);
 
   const leaveVoice = useCallback(() => {
+    stopLevelMeter();
+
     const localStream = localStreamRef.current;
     if (localStream) {
       for (const track of localStream.getTracks()) {
         track.stop();
       }
+    }
+
+    const rawStream = rawStreamRef.current;
+    if (rawStream) {
+      for (const track of rawStream.getTracks()) {
+        track.stop();
+      }
+    }
+
+    const audioContext = audioContextRef.current;
+    if (audioContext) {
+      void audioContext.close();
     }
 
     const pc = pcRef.current;
@@ -96,6 +292,10 @@ export function useVoiceRoom() {
     }
 
     localStreamRef.current = null;
+    rawStreamRef.current = null;
+    audioContextRef.current = null;
+    gainNodeRef.current = null;
+    analyserRef.current = null;
     pcRef.current = null;
     wsRef.current = null;
 
@@ -106,7 +306,7 @@ export function useVoiceRoom() {
     setRemoteStreams([]);
     setVoiceUsers([]);
     setMuted(false);
-  }, []);
+  }, [stopLevelMeter]);
 
   const joinVoice = useCallback(
     async (params: {
@@ -132,18 +332,17 @@ export function useVoiceRoom() {
       setRemoteStreams([]);
 
       try {
-        const localStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1,
-            sampleRate: 48000,
-          },
+        const rawStream = await navigator.mediaDevices.getUserMedia({
+          audio: getAudioConstraints(settingsRef.current),
           video: false,
         });
+        const localStream = await createProcessedAudioStream(rawStream);
 
+        rawStreamRef.current = rawStream;
         localStreamRef.current = localStream;
+        refreshInputDevices().catch(() => {
+          setInputDevices([]);
+        });
 
         const pc = new RTCPeerConnection({
           iceServers: [
@@ -168,33 +367,46 @@ export function useVoiceRoom() {
 
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === "connected") {
+            setError(null);
             setState("connected");
+            return;
           }
 
-          if (
-            pc.connectionState === "failed" ||
-            pc.connectionState === "closed" ||
-            pc.connectionState === "disconnected"
-          ) {
+          if (pc.connectionState === "disconnected") {
+            setError("WebRTC соединение временно потеряно, пробуем восстановить...");
+            setState("connecting");
+            return;
+          }
+
+          if (pc.connectionState === "failed" || pc.connectionState === "closed") {
             setError(`WebRTC соединение ${pc.connectionState}`);
             setState("error");
           }
         };
 
         pc.ontrack = (event) => {
-          const stream = event.streams[0];
+          const stream = event.streams[0] ?? new MediaStream([event.track]);
 
           if (!stream) {
             return;
           }
 
+          event.track.onended = () => {
+            setRemoteStreams((prev) =>
+              prev.filter((item) => item.id !== stream.id),
+            );
+          };
+
           setRemoteStreams((prev) => {
-            const exists = prev.some((item) => item.id === stream.id);
+            const activeStreams = prev.filter((item) =>
+              item.getTracks().some((track) => track.readyState !== "ended"),
+            );
+            const exists = activeStreams.some((item) => item.id === stream.id);
             if (exists) {
-              return prev;
+              return activeStreams;
             }
 
-            return [...prev, stream];
+            return [...activeStreams, stream];
           });
         };
 
@@ -208,7 +420,7 @@ export function useVoiceRoom() {
               parameters.encodings = [{}];
             }
 
-            parameters.encodings[0].maxBitrate = 64000;
+            parameters.encodings[0].maxBitrate = 96000;
 
             try {
               await sender.setParameters(parameters);
@@ -335,7 +547,7 @@ export function useVoiceRoom() {
         leaveVoice();
       }
     },
-    [leaveVoice, sendSignal],
+    [createProcessedAudioStream, leaveVoice, refreshInputDevices, sendSignal],
   );
 
   const toggleMute = useCallback(() => {
@@ -358,6 +570,9 @@ export function useVoiceRoom() {
     state,
     error,
     muted,
+    settings,
+    inputDevices,
+    inputLevel,
     currentChannelId,
     currentChannelName,
     remoteStreams,
@@ -365,5 +580,7 @@ export function useVoiceRoom() {
     joinVoice,
     leaveVoice,
     toggleMute,
+    refreshInputDevices,
+    setVoiceSettings,
   };
 }

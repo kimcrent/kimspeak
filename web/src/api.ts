@@ -132,7 +132,9 @@ async function request<T>(
       contentType = response.contentType || "";
     } catch (err) {
       const message = err instanceof Error ? err.message : "сетевой сбой";
-      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`);
+      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`, {
+        cause: err,
+      });
     }
   } else {
     const url = `${API_BASE_URL}${path}`;
@@ -145,7 +147,9 @@ async function request<T>(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "сетевой сбой";
-      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`);
+      throw new Error(`Не удалось подключиться к API (${API_BASE_URL}): ${message}`, {
+        cause: err,
+      });
     }
 
     ok = response.ok;

@@ -130,8 +130,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 		switch state {
 		case webrtc.PeerConnectionStateFailed,
-			webrtc.PeerConnectionStateClosed,
-			webrtc.PeerConnectionStateDisconnected:
+			webrtc.PeerConnectionStateClosed:
 			room.RemovePeer(peer)
 			_ = pc.Close()
 			_ = ws.Close()
@@ -150,7 +149,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			"codec", remoteTrack.Codec().MimeType,
 		)
 
-		localTrack, relayTrackID, err := room.AddRelayTrack(userID, remoteTrack)
+		localTrack, relayTrackID, err := room.AddRelayTrack(peer, remoteTrack)
 		if err != nil {
 			h.logger.Error("failed to add relay track", "error", err)
 			return
