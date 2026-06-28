@@ -45,7 +45,9 @@ function App() {
   const [email, setEmail] = useState("k1epa@example.com");
   const [password, setPassword] = useState("123456");
 
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
+  const [token, setToken] = useState(
+    () => localStorage.getItem(TOKEN_KEY) || "",
+  );
   const [user, setUser] = useState<User | null>(null);
 
   const [guilds, setGuilds] = useState<Guild[]>([]);
@@ -89,8 +91,10 @@ function App() {
   );
 
   const isActiveVoiceChannelJoined =
-    activeChannel?.type === "voice" && voice.currentChannelId === activeChannel.id;
-  const isActiveVoiceConnecting = isActiveVoiceChannelJoined && voice.state === "connecting";
+    activeChannel?.type === "voice" &&
+    voice.currentChannelId === activeChannel.id;
+  const isActiveVoiceConnecting =
+    isActiveVoiceChannelJoined && voice.state === "connecting";
 
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY);
@@ -131,10 +135,14 @@ function App() {
       .then((items) => {
         setGuilds(items);
         setActiveGuildId((current) => current || items[0]?.id || "");
-        setStatus(items.length ? "Серверы загружены" : "Создайте первый сервер");
+        setStatus(
+          items.length ? "Серверы загружены" : "Создайте первый сервер",
+        );
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Не удалось загрузить серверы");
+        setError(
+          err instanceof Error ? err.message : "Не удалось загрузить серверы",
+        );
         setStatus("Ошибка загрузки серверов");
       })
       .finally(() => {
@@ -160,14 +168,20 @@ function App() {
             return current;
           }
 
-          return items.find((channel) => channel.type === "text")?.id || items[0]?.id || "";
+          return (
+            items.find((channel) => channel.type === "text")?.id ||
+            items[0]?.id ||
+            ""
+          );
         });
         setStatus(items.length ? "Каналы загружены" : "Создайте первый канал");
       })
       .catch((err) => {
         setChannels([]);
         setActiveChannelId("");
-        setError(err instanceof Error ? err.message : "Не удалось загрузить каналы");
+        setError(
+          err instanceof Error ? err.message : "Не удалось загрузить каналы",
+        );
         setStatus("Ошибка загрузки каналов");
       })
       .finally(() => {
@@ -191,7 +205,9 @@ function App() {
       })
       .catch((err) => {
         setMessages([]);
-        setError(err instanceof Error ? err.message : "Не удалось загрузить сообщения");
+        setError(
+          err instanceof Error ? err.message : "Не удалось загрузить сообщения",
+        );
         setStatus("Ошибка загрузки сообщений");
       })
       .finally(() => {
@@ -253,7 +269,9 @@ function App() {
       setGuildName("");
       setStatus("Сервер создан");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать сервер");
+      setError(
+        err instanceof Error ? err.message : "Не удалось создать сервер",
+      );
       setStatus("Ошибка создания сервера");
     } finally {
       setIsWorkspaceLoading(false);
@@ -298,12 +316,21 @@ function App() {
     setError("");
 
     try {
-      const channel = await createChannel(token, activeGuildId, "voice", "voice");
+      const channel = await createChannel(
+        token,
+        activeGuildId,
+        "voice",
+        "voice",
+      );
       setChannels((items) => [...items, channel]);
       setActiveChannelId(channel.id);
       setStatus("Голосовой канал создан");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать голосовой канал");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось создать голосовой канал",
+      );
       setStatus("Ошибка создания канала");
     } finally {
       setIsWorkspaceLoading(false);
@@ -322,7 +349,6 @@ function App() {
       channelName: channel.name,
       userId: user.id,
       username: user.username,
-
     });
   }
 
@@ -337,12 +363,18 @@ function App() {
     setError("");
 
     try {
-      const message = await createMessage(token, activeChannelId, messageDraft.trim());
+      const message = await createMessage(
+        token,
+        activeChannelId,
+        messageDraft.trim(),
+      );
       setMessages((items) => [...items, message]);
       setMessageDraft("");
       setStatus("Сообщение отправлено");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось отправить сообщение");
+      setError(
+        err instanceof Error ? err.message : "Не удалось отправить сообщение",
+      );
       setStatus("Ошибка отправки");
     } finally {
       setIsSending(false);
@@ -387,9 +419,15 @@ function App() {
         </section>
 
         <section className="authCard">
-          <div className="authTitle">{mode === "login" ? "Вход" : "Регистрация"}</div>
+          <div className="authTitle">
+            {mode === "login" ? "Вход" : "Регистрация"}
+          </div>
 
-          <div className="authTabs" role="tablist" aria-label="Режим авторизации">
+          <div
+            className="authTabs"
+            role="tablist"
+            aria-label="Режим авторизации"
+          >
             <button
               className={mode === "login" ? "authTab active" : "authTab"}
               onClick={() => setMode("login")}
@@ -437,12 +475,18 @@ function App() {
                 onChange={(event) => setPassword(event.target.value)}
                 type="password"
                 placeholder="123456"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
               />
             </label>
 
             <button className="submitButton" disabled={isLoading}>
-              {isLoading ? "Отправляем..." : mode === "login" ? "Войти" : "Создать аккаунт"}
+              {isLoading
+                ? "Отправляем..."
+                : mode === "login"
+                  ? "Войти"
+                  : "Создать аккаунт"}
             </button>
           </form>
 
@@ -465,7 +509,9 @@ function App() {
         <div className="serverRail">
           {guilds.map((guild) => (
             <button
-              className={guild.id === activeGuildId ? "server active" : "server"}
+              className={
+                guild.id === activeGuildId ? "server active" : "server"
+              }
               key={guild.id}
               onClick={() => setActiveGuildId(guild.id)}
               title={guild.name}
@@ -491,7 +537,10 @@ function App() {
             onChange={(event) => setGuildName(event.target.value)}
             placeholder="Новый сервер"
           />
-          <button disabled={isWorkspaceLoading || !guildName.trim()} title="Создать сервер">
+          <button
+            disabled={isWorkspaceLoading || !guildName.trim()}
+            title="Создать сервер"
+          >
             +
           </button>
         </form>
@@ -501,7 +550,9 @@ function App() {
             <div className="channelCategory">Текстовые каналы</div>
             {textChannels.map((channel) => (
               <button
-                className={channel.id === activeChannelId ? "channel active" : "channel"}
+                className={
+                  channel.id === activeChannelId ? "channel active" : "channel"
+                }
                 key={channel.id}
                 onClick={() => setActiveChannelId(channel.id)}
                 type="button"
@@ -510,37 +561,78 @@ function App() {
                 {channel.name}
               </button>
             ))}
-            {!textChannels.length && <div className="emptyHint">Пока нет текстовых каналов</div>}
+            {!textChannels.length && (
+              <div className="emptyHint">Пока нет текстовых каналов</div>
+            )}
           </div>
-
           <div className="channelBlock">
             <div className="channelCategory">Голосовые каналы</div>
-            {voiceChannels.map((channel) => (
-              <div className="voiceChannelRow" key={channel.id}>
-                <button
-                  className={
-                    channel.id === activeChannelId || channel.id === voice.currentChannelId
-                      ? "channel active"
-                      : "channel"
-                  }
-                  onClick={() => setActiveChannelId(channel.id)}
-                  type="button"
-                >
-                  <span>♪</span>
-                  {channel.name}
-                </button>
-                <button
-                  className="channelJoinButton"
-                  disabled={voice.currentChannelId === channel.id && voice.state !== "error"}
-                  onClick={() => handleJoinVoiceChannel(channel)}
-                  type="button"
-                >
-                  {voice.currentChannelId === channel.id && voice.state !== "error"
-                    ? "Внутри"
-                    : "Войти"}
-                </button>
-              </div>
-            ))}
+
+            {voiceChannels.map((channel) => {
+              const isCurrentVoiceChannel =
+                voice.currentChannelId === channel.id &&
+                voice.state !== "error";
+
+              const usersInChannel = isCurrentVoiceChannel
+                ? voice.voiceUsers
+                : [];
+
+              return (
+                <div className="voiceChannelTree" key={channel.id}>
+                  <button
+                    className={
+                      channel.id === activeChannelId || isCurrentVoiceChannel
+                        ? "voiceChannelHeader active"
+                        : "voiceChannelHeader"
+                    }
+                    onClick={() => {
+                      setActiveChannelId(channel.id);
+
+                      if (!isCurrentVoiceChannel) {
+                        handleJoinVoiceChannel(channel);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span className="voiceChannelIcon">♪</span>
+                    <span className="voiceChannelName">{channel.name}</span>
+
+                    {isCurrentVoiceChannel && (
+                      <span className="voiceChannelState">Внутри</span>
+                    )}
+                  </button>
+
+                  {usersInChannel.length > 0 && (
+                    <div className="voiceChannelMembers">
+                      {usersInChannel.map((voiceUser) => {
+                        const displayName = voiceUser.username || voiceUser.id;
+
+                        return (
+                          <div
+                            className="voiceChannelMember"
+                            key={voiceUser.id}
+                          >
+                            <div className="voiceChannelMemberAvatar">
+                              {displayName.slice(0, 1).toUpperCase()}
+                            </div>
+
+                            <div className="voiceChannelMemberName">
+                              {displayName}
+                            </div>
+
+                            <div className="voiceChannelMemberIcons">
+                              <span title="Микрофон">🎤</span>
+                              <span title="Звук">🎧</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
             {!voiceChannels.length && (
               <div className="emptyHint emptyHintWithAction">
                 <span>Пока нет голосовых каналов</span>
@@ -580,7 +672,10 @@ function App() {
               onChange={(event) => setChannelName(event.target.value)}
               placeholder="Новый канал"
             />
-            <button disabled={isWorkspaceLoading || !channelName.trim()} title="Создать канал">
+            <button
+              disabled={isWorkspaceLoading || !channelName.trim()}
+              title="Создать канал"
+            >
               +
             </button>
           </form>
@@ -592,7 +687,12 @@ function App() {
             <div className="profileName">{user.username}</div>
             <div className="profileStatus online">online</div>
           </div>
-          <button className="profileLogout" onClick={logout} title="Выйти" type="button">
+          <button
+            className="profileLogout"
+            onClick={logout}
+            title="Выйти"
+            type="button"
+          >
             ⏻
           </button>
         </div>
@@ -602,7 +702,8 @@ function App() {
         <header className="topbar">
           <div>
             <strong>
-              {activeChannel?.type === "voice" ? "♪" : "#"} {activeChannel?.name || "канал не выбран"}
+              {activeChannel?.type === "voice" ? "♪" : "#"}{" "}
+              {activeChannel?.name || "канал не выбран"}
             </strong>
             <span>
               {activeGuild
@@ -623,7 +724,10 @@ function App() {
           {activeGuild && !activeChannel && (
             <div className="emptyState">
               <h2>Добавьте канал</h2>
-              <p>Текстовый канал нужен для сообщений, голосовой можно оставить как комнату.</p>
+              <p>
+                Текстовый канал нужен для сообщений, голосовой можно оставить
+                как комнату.
+              </p>
             </div>
           )}
 
@@ -631,7 +735,10 @@ function App() {
             <div className="voiceRoom">
               <div className="pulse">♪</div>
               <h2>{activeChannel.name}</h2>
-              <p>Голосовая комната готова. Текстовые сообщения доступны в каналах с #.</p>
+              <p>
+                Голосовая комната готова. Текстовые сообщения доступны в каналах
+                с #.
+              </p>
               <button
                 className="voiceRoomJoinButton"
                 disabled={isActiveVoiceChannelJoined && voice.state !== "error"}
@@ -651,20 +758,27 @@ function App() {
             <div className="emptyHint">Загружаем сообщения...</div>
           )}
 
-          {activeChannel?.type === "text" && !isMessagesLoading && !messages.length && (
-            <div className="emptyState">
-              <h2>Тут пока тихо</h2>
-              <p>Напишите первое сообщение в #{activeChannel.name}.</p>
-            </div>
-          )}
+          {activeChannel?.type === "text" &&
+            !isMessagesLoading &&
+            !messages.length && (
+              <div className="emptyState">
+                <h2>Тут пока тихо</h2>
+                <p>Напишите первое сообщение в #{activeChannel.name}.</p>
+              </div>
+            )}
 
           {activeChannel?.type === "text" &&
             messages.map((message) => {
               const isOwn = message.author_id === user.id;
-              const authorName = isOwn ? user.username : `user-${message.author_id.slice(0, 6)}`;
+              const authorName = isOwn
+                ? user.username
+                : `user-${message.author_id.slice(0, 6)}`;
 
               return (
-                <article className={isOwn ? "message ownMessage" : "message"} key={message.id}>
+                <article
+                  className={isOwn ? "message ownMessage" : "message"}
+                  key={message.id}
+                >
                   <div className="avatar">{getInitial(authorName)}</div>
                   <div className="messageBody">
                     <div className="messageMeta">
@@ -682,7 +796,9 @@ function App() {
 
         <form className="messageInput" onSubmit={handleSendMessage}>
           <input
-            disabled={!activeChannel || activeChannel.type !== "text" || isSending}
+            disabled={
+              !activeChannel || activeChannel.type !== "text" || isSending
+            }
             value={messageDraft}
             onChange={(event) => setMessageDraft(event.target.value)}
             placeholder={
@@ -693,7 +809,10 @@ function App() {
           />
           <button
             disabled={
-              !activeChannel || activeChannel.type !== "text" || !messageDraft.trim() || isSending
+              !activeChannel ||
+              activeChannel.type !== "text" ||
+              !messageDraft.trim() ||
+              isSending
             }
           >
             Отправить
