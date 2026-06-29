@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/ice/v4"
@@ -13,9 +14,10 @@ import (
 )
 
 type Handler struct {
-	sfu    *SFU
-	logger *slog.Logger
-	api    *webrtc.API
+	sfu        *SFU
+	logger     *slog.Logger
+	api        *webrtc.API
+	iceServers []webrtc.ICEServer
 }
 
 func NewHandler(logger *slog.Logger) *Handler {
@@ -24,9 +26,10 @@ func NewHandler(logger *slog.Logger) *Handler {
 	}
 
 	return &Handler{
-		sfu:    NewSFU(logger),
-		logger: logger,
-		api:    newWebRTCAPI(logger),
+		sfu:        NewSFU(logger),
+		logger:     logger,
+		api:        newWebRTCAPI(logger),
+		iceServers: loadICEServers(logger),
 	}
 }
 
@@ -35,6 +38,12 @@ var upgrader = websocket.Upgrader{
 		return true
 	},
 }
+
+const (
+	signalReadLimit = 64 * 1024
+	signalPongWait  = 60 * time.Second
+	signalPingEvery = 30 * time.Second
+)
 
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	channelID := r.URL.Query().Get("channel_id")
@@ -62,6 +71,11 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ws := NewSafeWS(conn)
+	configureSignalWebSocket(conn)
+
+	heartbeatDone := make(chan struct{})
+	defer close(heartbeatDone)
+	go keepSignalWebSocketAlive(ws, heartbeatDone, h.logger, userID, channelID)
 
 	pc, err := h.newPeerConnection()
 
@@ -93,6 +107,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	room := h.sfu.GetRoom(channelID)
 
 	peer := &Peer{
+		ID:       newPeerID(),
 		UserID:   userID,
 		Username: username,
 		RoomID:   channelID,
@@ -100,10 +115,18 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		ws:       ws,
 		Room:     room,
 		logger:   h.logger,
+		Settings: defaultVoiceSettings(),
 		senders:  make(map[string]*webrtc.RTPSender),
 	}
 
-	room.AddPeer(peer)
+	if replacedPeer := room.AddPeer(peer); replacedPeer != nil {
+		h.logger.Info(
+			"replaced existing voice peer",
+			"user_id", userID,
+			"channel_id", channelID,
+		)
+		replacedPeer.close()
+	}
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
@@ -252,6 +275,46 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 				h.logger.Warn("failed to add remote ICE candidate", "user_id", userID, "error", err)
 				continue
 			}
+		case MessageTypeSettings:
+			if msg.Settings == nil {
+				continue
+			}
+
+			settings := sanitizeVoiceSettings(*msg.Settings)
+			if room.UpdatePeerSettings(peer, settings) {
+				go room.BroadcastVoiceState()
+			}
+		}
+	}
+}
+
+func configureSignalWebSocket(conn *websocket.Conn) {
+	conn.SetReadLimit(signalReadLimit)
+	_ = conn.SetReadDeadline(time.Now().Add(signalPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(signalPongWait))
+	})
+}
+
+func keepSignalWebSocketAlive(ws *SafeWS, done <-chan struct{}, logger *slog.Logger, userID string, channelID string) {
+	ticker := time.NewTicker(signalPingEvery)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if err := ws.WriteControl(websocket.PingMessage, nil); err != nil {
+				logger.Warn(
+					"failed to ping voice websocket",
+					"user_id", userID,
+					"channel_id", channelID,
+					"error", err,
+				)
+				_ = ws.Close()
+				return
+			}
 		}
 	}
 }
@@ -308,12 +371,54 @@ func newWebRTCAPI(logger *slog.Logger) *webrtc.API {
 
 func (h *Handler) newPeerConnection() (*webrtc.PeerConnection, error) {
 	return h.api.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{
-					"stun:stun.l.google.com:19302",
-				},
-			},
-		},
+		ICEServers: h.iceServers,
 	})
+}
+
+func loadICEServers(logger *slog.Logger) []webrtc.ICEServer {
+	stunURLs := splitEnvList(os.Getenv("WEBRTC_STUN_URLS"))
+	if len(stunURLs) == 0 {
+		stunURLs = []string{"stun:stun.l.google.com:19302"}
+	}
+
+	iceServers := []webrtc.ICEServer{
+		{
+			URLs: stunURLs,
+		},
+	}
+
+	turnURLs := splitEnvList(os.Getenv("WEBRTC_TURN_URLS"))
+	if len(turnURLs) > 0 {
+		iceServers = append(iceServers, webrtc.ICEServer{
+			URLs:       turnURLs,
+			Username:   strings.TrimSpace(os.Getenv("WEBRTC_TURN_USERNAME")),
+			Credential: strings.TrimSpace(os.Getenv("WEBRTC_TURN_CREDENTIAL")),
+		})
+
+		if logger != nil {
+			logger.Info(
+				"configured WebRTC TURN servers",
+				"stun_url_count", len(stunURLs),
+				"turn_url_count", len(turnURLs),
+			)
+		}
+	}
+
+	return iceServers
+}
+
+func splitEnvList(value string) []string {
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		values = append(values, part)
+	}
+
+	return values
 }

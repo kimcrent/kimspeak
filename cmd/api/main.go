@@ -17,7 +17,14 @@ func main() {
 
 	cfg := config.Load()
 
-	postgresPool, err := db.NewPostgresPool(ctx, cfg.DatabaseURL)
+	postgresPool, err := db.NewPostgresPool(ctx, cfg.DatabaseURL, db.PoolOptions{
+		MaxConns:          cfg.DatabaseMaxConns,
+		MinConns:          cfg.DatabaseMinConns,
+		MaxConnLifetime:   cfg.DatabaseMaxLifetime,
+		MaxConnIdleTime:   cfg.DatabaseMaxIdleTime,
+		HealthCheckPeriod: cfg.DatabaseHealthPeriod,
+		PingTimeout:       cfg.DatabasePingTimeout,
+	})
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
 	}

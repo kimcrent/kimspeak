@@ -1,0 +1,50 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-windows.yml"
+      - "web/**"
+
+jobs:
+  build-windows:
+    name: Build KIMSpeak for Windows
+    runs-on: windows-latest
+
+    env:
+      VITE_API_BASE_URL: https://194.34.239.146.sslip.io/api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build Windows app
+        working-directory: web
+        run: npm run tauri -- build
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: KIMSpeak-windows
+          if-no-files-found: error
+          path: |
+            web/src-tauri/target/release/bundle/msi/*.msi
+            web/src-tauri/target/release/bundle/nsis/*.exe
+            web/src-tauri/target/release/*.exe

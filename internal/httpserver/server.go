@@ -25,7 +25,16 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 
 func (s *Server) Start() error {
 	router := s.NewRouter()
+	server := &http.Server{
+		Addr:              s.cfg.HTTPAddr,
+		Handler:           router,
+		ReadHeaderTimeout: s.cfg.HTTPReadHeaderTimeout,
+		ReadTimeout:       s.cfg.HTTPReadTimeout,
+		WriteTimeout:      s.cfg.HTTPWriteTimeout,
+		IdleTimeout:       s.cfg.HTTPIdleTimeout,
+		MaxHeaderBytes:    1 << 20,
+	}
 
 	s.logger.Info("Starting http server", "addr", s.cfg.HTTPAddr)
-	return http.ListenAndServe(s.cfg.HTTPAddr, router)
+	return server.ListenAndServe()
 }

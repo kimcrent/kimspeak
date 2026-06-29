@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import "./App.css";
 import {
@@ -22,6 +22,7 @@ import {
 } from "./api";
 import type { Channel, ChannelMember, Guild, GuildInvitation, Message, User } from "./api";
 import { useVoiceRoom } from "./voice/useVoiceRoom";
+import type { VoiceSettings } from "./voice/useVoiceRoom";
 import { VoicePanel } from "./voice/VoicePanel";
 
 type AuthMode = "login" | "register";
@@ -31,6 +32,20 @@ type RenameDraft = {
   channelId: string;
   name: string;
 } | null;
+type VoiceUserMenu = {
+  userId: string;
+  username: string;
+  x: number;
+  y: number;
+} | null;
+
+type AppSettingsModalProps = {
+  voiceSettings: VoiceSettings;
+  isConnected: boolean;
+  onClose: () => void;
+  onToggleMute: () => void;
+  onUpdateVoiceSettings: (patch: Partial<VoiceSettings>) => void;
+};
 
 const TOKEN_KEY = "kimspeak_token";
 
@@ -73,6 +88,161 @@ function getRoleLabel(role: ChannelMember["role"]) {
   return "Участник";
 }
 
+function AppSettingsModal({
+  voiceSettings,
+  isConnected,
+  onClose,
+  onToggleMute,
+  onUpdateVoiceSettings,
+}: AppSettingsModalProps) {
+  return (
+    <div
+      className="modalBackdrop settingsBackdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section className="settingsModal" aria-modal="true" role="dialog">
+        <header className="settingsHeader">
+          <div>
+            <h2>Настройки</h2>
+            <span>{isConnected ? "Голос активен" : "Голос не подключён"}</span>
+          </div>
+          <button
+            className="settingsClose"
+            onClick={onClose}
+            type="button"
+            title="Закрыть"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="settingsLayout">
+          <nav className="settingsNav" aria-label="Разделы настроек">
+            <button className="active" type="button">
+              Голос
+            </button>
+          </nav>
+
+          <div className="settingsContent">
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Микрофон</h3>
+                <span>{voiceSettings.muted ? "Выключен" : "Включён"}</span>
+              </div>
+
+              <button
+                className={
+                  voiceSettings.muted
+                    ? "settingSwitch"
+                    : "settingSwitch enabled"
+                }
+                onClick={onToggleMute}
+                type="button"
+              >
+                <span>Микрофон</span>
+                <b>{voiceSettings.muted ? "off" : "on"}</b>
+              </button>
+
+              <label className="settingsSlider">
+                <span>
+                  Громкость микрофона{" "}
+                  {Math.round(voiceSettings.inputGain * 100)}%
+                </span>
+                <input
+                  max="2"
+                  min="0"
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({
+                      inputGain: Number(event.target.value),
+                    })
+                  }
+                  step="0.05"
+                  type="range"
+                  value={voiceSettings.inputGain}
+                />
+              </label>
+            </section>
+
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Обработка</h3>
+              </div>
+
+              <div className="settingsToggles">
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.noiseSuppression}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({
+                        noiseSuppression: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Шумоподавление</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.echoCancellation}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({
+                        echoCancellation: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Подавление эха</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.autoGainControl}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({
+                        autoGainControl: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Автоусиление</span>
+                </label>
+              </div>
+            </section>
+
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Передача</h3>
+                <span>{voiceSettings.bitrateKbps} кбит/с</span>
+              </div>
+
+              <label className="settingsSlider">
+                <span>Битрейт голоса</span>
+                <input
+                  max="128"
+                  min="16"
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({
+                      bitrateKbps: Number(event.target.value),
+                    })
+                  }
+                  step="8"
+                  type="range"
+                  value={voiceSettings.bitrateKbps}
+                />
+              </label>
+            </section>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const voice = useVoiceRoom();
 
@@ -101,6 +271,8 @@ function App() {
   const [renameDraft, setRenameDraft] = useState<RenameDraft>(null);
   const [inviteUsername, setInviteUsername] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [voiceUserMenu, setVoiceUserMenu] = useState<VoiceUserMenu>(null);
 
   const [status, setStatus] = useState("Готов к работе");
   const [error, setError] = useState("");
@@ -112,6 +284,10 @@ function App() {
   const [isSending, setIsSending] = useState(false);
   const [isInviteSending, setIsInviteSending] = useState(false);
   const [isInvitationUpdating, setIsInvitationUpdating] = useState(false);
+
+  const channelsCacheRef = useRef(new Map<string, Channel[]>());
+  const guildMembersCacheRef = useRef(new Map<string, ChannelMember[]>());
+  const messagesCacheRef = useRef(new Map<string, Message[]>());
 
   const activeGuild = useMemo(
     () => guilds.find((guild) => guild.id === activeGuildId) || null,
@@ -154,6 +330,15 @@ function App() {
     voice.currentChannelId === activeChannel.id;
   const isActiveVoiceConnecting =
     isActiveVoiceChannelJoined && voice.state === "connecting";
+  const voiceUserMenuVolume = voiceUserMenu
+    ? voice.remoteVolumes[voiceUserMenu.userId] ?? 1
+    : 1;
+  const voiceUserMenuStyle = voiceUserMenu
+    ? {
+        left: Math.max(8, Math.min(voiceUserMenu.x, window.innerWidth - 286)),
+        top: Math.max(8, Math.min(voiceUserMenu.y, window.innerHeight - 178)),
+      }
+    : undefined;
 
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY);
@@ -181,6 +366,47 @@ function App() {
         setIsCheckingAuth(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!voiceUserMenu) {
+      return;
+    }
+
+    const closeMenu = () => setVoiceUserMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [voiceUserMenu]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSettingsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isSettingsOpen]);
 
   useEffect(() => {
     if (!token || !user) {
@@ -294,11 +520,36 @@ function App() {
       return;
     }
 
-    setIsWorkspaceLoading(true);
+    let isCancelled = false;
+    const cachedChannels = channelsCacheRef.current.get(activeGuildId);
+
+    if (cachedChannels) {
+      setChannels(cachedChannels);
+      setActiveChannelId((current) => {
+        if (cachedChannels.some((channel) => channel.id === current)) {
+          return current;
+        }
+
+        return (
+          cachedChannels.find((channel) => channel.type === "text")?.id ||
+          cachedChannels[0]?.id ||
+          ""
+        );
+      });
+      setIsWorkspaceLoading(false);
+    } else {
+      setIsWorkspaceLoading(true);
+    }
+
     setError("");
 
     listChannels(token, activeGuildId)
       .then((items) => {
+        if (isCancelled) {
+          return;
+        }
+
+        channelsCacheRef.current.set(activeGuildId, items);
         setChannels(items);
         setActiveChannelId((current) => {
           if (items.some((channel) => channel.id === current)) {
@@ -312,8 +563,40 @@ function App() {
           );
         });
         setStatus(items.length ? "Каналы загружены" : "Создайте первый канал");
+
+        window.setTimeout(() => {
+          if (isCancelled) {
+            return;
+          }
+
+          for (const channel of items
+            .filter((item) => item.type === "text")
+            .slice(0, 3)) {
+            if (messagesCacheRef.current.has(channel.id)) {
+              continue;
+            }
+
+            listMessages(token, channel.id)
+              .then((messages) => {
+                if (!isCancelled) {
+                  messagesCacheRef.current.set(channel.id, messages);
+                }
+              })
+              .catch(() => {
+                // Background prefetch must stay silent.
+              });
+          }
+        }, 250);
       })
       .catch((err) => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (cachedChannels) {
+          return;
+        }
+
         setChannels([]);
         setActiveChannelId("");
         setError(
@@ -322,8 +605,14 @@ function App() {
         setStatus("Ошибка загрузки каналов");
       })
       .finally(() => {
-        setIsWorkspaceLoading(false);
+        if (!isCancelled) {
+          setIsWorkspaceLoading(false);
+        }
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [activeGuildId, token]);
 
   useEffect(() => {
@@ -334,17 +623,28 @@ function App() {
     }
 
     let isCancelled = false;
+    const cachedMembers = guildMembersCacheRef.current.get(activeGuildId);
 
-    setIsMembersLoading(true);
+    if (cachedMembers) {
+      setGuildMembers(cachedMembers);
+      setIsMembersLoading(false);
+    } else {
+      setIsMembersLoading(true);
+    }
 
     listGuildMembers(token, activeGuildId)
       .then((items) => {
         if (!isCancelled) {
+          guildMembersCacheRef.current.set(activeGuildId, items);
           setGuildMembers(items);
         }
       })
       .catch((err) => {
         if (!isCancelled) {
+          if (cachedMembers) {
+            return;
+          }
+
           setGuildMembers([]);
           setError(
             err instanceof Error
@@ -370,15 +670,38 @@ function App() {
       return;
     }
 
-    setIsMessagesLoading(true);
+    let isCancelled = false;
+    const cachedMessages = messagesCacheRef.current.get(activeChannelId);
+
+    if (cachedMessages) {
+      setMessages(cachedMessages);
+      setIsMessagesLoading(false);
+    } else {
+      setMessages([]);
+      setIsMessagesLoading(true);
+    }
+
     setError("");
 
     listMessages(token, activeChannelId)
       .then((items) => {
+        if (isCancelled) {
+          return;
+        }
+
+        messagesCacheRef.current.set(activeChannelId, items);
         setMessages(items);
         setStatus("Сообщения загружены");
       })
       .catch((err) => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (cachedMessages) {
+          return;
+        }
+
         setMessages([]);
         setError(
           err instanceof Error ? err.message : "Не удалось загрузить сообщения",
@@ -386,9 +709,15 @@ function App() {
         setStatus("Ошибка загрузки сообщений");
       })
       .finally(() => {
-        setIsMessagesLoading(false);
+        if (!isCancelled) {
+          setIsMessagesLoading(false);
+        }
       });
-  }, [activeChannel, activeChannelId, token]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeChannel?.type, activeChannelId, token]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -482,7 +811,11 @@ function App() {
         createName.trim().replace(/^#/, ""),
         createModalType,
       );
-      setChannels((items) => [...items, channel]);
+      setChannels((items) => {
+        const nextChannels = [...items, channel];
+        channelsCacheRef.current.set(activeGuildId, nextChannels);
+        return nextChannels;
+      });
       setActiveChannelId(channel.id);
       setStatus(
         createModalType === "voice"
@@ -516,9 +849,15 @@ function App() {
         renameDraft.channelId,
         renameDraft.name.trim().replace(/^#/, ""),
       );
-      setChannels((items) =>
-        items.map((item) => (item.id === channel.id ? channel : item)),
-      );
+      setChannels((items) => {
+        const nextChannels = items.map((item) =>
+          item.id === channel.id ? channel : item,
+        );
+        if (activeGuildId) {
+          channelsCacheRef.current.set(activeGuildId, nextChannels);
+        }
+        return nextChannels;
+      });
       setStatus("Канал переименован");
       closeRenameModal();
     } catch (err) {
@@ -551,6 +890,9 @@ function App() {
       await deleteChannelRequest(token, channelId);
 
       const nextChannels = channels.filter((channel) => channel.id !== channelId);
+      if (activeGuildId) {
+        channelsCacheRef.current.set(activeGuildId, nextChannels);
+      }
       setChannels(nextChannels);
 
       if (activeChannelId === channelId) {
@@ -602,7 +944,11 @@ function App() {
         activeChannelId,
         messageDraft.trim(),
       );
-      setMessages((items) => [...items, message]);
+      setMessages((items) => {
+        const nextMessages = [...items, message];
+        messagesCacheRef.current.set(activeChannelId, nextMessages);
+        return nextMessages;
+      });
       setMessageDraft("");
       setStatus("Сообщение отправлено");
     } catch (err) {
@@ -696,6 +1042,7 @@ function App() {
   }
 
   function logout() {
+    voice.leaveVoice();
     localStorage.removeItem(TOKEN_KEY);
     setToken("");
     setUser(null);
@@ -985,11 +1332,38 @@ function App() {
                     <div className="voiceChannelMembers">
                       {usersInChannel.map((voiceUser) => {
                         const displayName = voiceUser.username || voiceUser.id;
+                        const settings = voiceUser.settings;
+                        const isSelf = voiceUser.id === user.id;
+                        const localVolume = voice.remoteVolumes[voiceUser.id] ?? 1;
+                        const localVolumePercent = Math.round(localVolume * 100);
+                        const memberClassName = [
+                          "voiceChannelMember",
+                          settings?.muted ? "muted" : "",
+                          isSelf ? "current" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
 
                         return (
                           <div
-                            className="voiceChannelMember"
+                            className={memberClassName}
                             key={voiceUser.id}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              setVoiceUserMenu(null);
+
+                              if (isSelf) {
+                                setIsSettingsOpen(true);
+                                return;
+                              }
+
+                              setVoiceUserMenu({
+                                userId: voiceUser.id,
+                                username: displayName,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            }}
                           >
                             <div className="voiceChannelMemberAvatar">
                               {displayName.slice(0, 1).toUpperCase()}
@@ -1000,8 +1374,36 @@ function App() {
                             </div>
 
                             <div className="voiceChannelMemberIcons">
-                              <span title="Микрофон">🎤</span>
-                              <span title="Звук">🎧</span>
+                              <span
+                                className={
+                                  settings?.muted
+                                    ? "voiceMemberBadge danger"
+                                    : "voiceMemberBadge"
+                                }
+                                title={
+                                  settings?.muted
+                                    ? "Микрофон выключен"
+                                    : "Микрофон включён"
+                                }
+                              >
+                                {settings?.muted ? "off" : "mic"}
+                              </span>
+                              {!isSelf && localVolumePercent !== 100 && (
+                                <span
+                                  className="voiceMemberBadge"
+                                  title="Локальная громкость"
+                                >
+                                  {localVolumePercent}%
+                                </span>
+                              )}
+                              {settings?.noiseSuppression && (
+                                <span
+                                  className="voiceMemberBadge"
+                                  title="Шумоподавление"
+                                >
+                                  NS
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
@@ -1034,6 +1436,14 @@ function App() {
             <div className="profileName">{user.username}</div>
             <div className="profileStatus online">online</div>
           </div>
+          <button
+            className="profileSettings"
+            onClick={() => setIsSettingsOpen(true)}
+            title="Настройки"
+            type="button"
+          >
+            ⚙
+          </button>
           <button
             className="profileLogout"
             onClick={logout}
@@ -1369,19 +1779,66 @@ function App() {
         </div>
       )}
 
+      {isSettingsOpen && (
+        <AppSettingsModal
+          voiceSettings={voice.voiceSettings}
+          isConnected={voice.state === "connected"}
+          onClose={() => setIsSettingsOpen(false)}
+          onToggleMute={voice.toggleMute}
+          onUpdateVoiceSettings={voice.updateVoiceSettings}
+        />
+      )}
+
+      {voiceUserMenu && (
+        <div
+          className="voiceUserMenu"
+          style={voiceUserMenuStyle}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="voiceUserMenuTitle">
+            <span>{voiceUserMenu.username}</span>
+            <b>{Math.round(voiceUserMenuVolume * 100)}%</b>
+          </div>
+
+          <label className="voiceUserMenuSlider">
+            <span>Громкость</span>
+            <input
+              max="2"
+              min="0"
+              onChange={(event) =>
+                voice.updateRemoteVolume(
+                  voiceUserMenu.userId,
+                  Number(event.target.value),
+                )
+              }
+              step="0.05"
+              type="range"
+              value={voiceUserMenuVolume}
+            />
+          </label>
+
+          <button
+            className="voiceUserMenuReset"
+            onClick={() => voice.updateRemoteVolume(voiceUserMenu.userId, 1)}
+            type="button"
+          >
+            Сбросить на 100%
+          </button>
+        </div>
+      )}
+
       <VoicePanel
         state={voice.state}
         error={voice.error}
         muted={voice.muted}
+        voiceSettings={voice.voiceSettings}
         channelName={voice.currentChannelName}
         remoteStreams={voice.remoteStreams}
-        settings={voice.settings}
-        inputDevices={voice.inputDevices}
-        inputLevel={voice.inputLevel}
+        remoteVolumes={voice.remoteVolumes}
         onToggleMute={voice.toggleMute}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onLeave={voice.leaveVoice}
-        onRefreshDevices={voice.refreshInputDevices}
-        onSettingsChange={voice.setVoiceSettings}
       />
     </div>
   );
