@@ -20,6 +20,20 @@ export type VoiceSettings = {
   bitrateKbps: number;
 };
 
+export type ScreenShareSourceType = "application" | "screen" | "device";
+
+export type ScreenShareSettings = {
+  sourceType: ScreenShareSourceType;
+  captureAudio: boolean;
+  quality: "sd" | "hd";
+  resolution: 360 | 480 | 720 | 1080 | 1440 | "source";
+  frameRate: 5 | 30 | 60;
+  bitrateKbps: number;
+  audioBitrateKbps: 64 | 96 | 128 | 192 | 256 | 320;
+  viewerLimit: number;
+  privacy: "public" | "contacts" | "private";
+};
+
 export type VoiceUser = {
   id: string;
   username: string;
@@ -56,6 +70,49 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   autoGainControl: true,
   bitrateKbps: 64,
 };
+
+const DEFAULT_SCREEN_SHARE_SETTINGS: ScreenShareSettings = {
+  sourceType: "screen",
+  captureAudio: true,
+  quality: "hd",
+  resolution: 1080,
+  frameRate: 30,
+  bitrateKbps: 8000,
+  audioBitrateKbps: 128,
+  viewerLimit: 0,
+  privacy: "public",
+};
+
+const SCREEN_SHARE_RESOLUTIONS: Record<
+  Exclude<ScreenShareSettings["resolution"], "source">,
+  { width: number; height: number }
+> = {
+  360: { width: 640, height: 360 },
+  480: { width: 854, height: 480 },
+  720: { width: 1280, height: 720 },
+  1080: { width: 1920, height: 1080 },
+  1440: { width: 2560, height: 1440 },
+};
+
+function getDisplaySurface(sourceType: ScreenShareSourceType) {
+  if (sourceType === "application") {
+    return "window";
+  }
+
+  if (sourceType === "screen") {
+    return "monitor";
+  }
+
+  return "browser";
+}
+
+function getContentHint(settings: ScreenShareSettings) {
+  if (settings.frameRate === 60) {
+    return "motion";
+  }
+
+  return settings.quality === "hd" ? "detail" : "text";
+}
 
 function getParticipantName(participant: RemoteParticipant) {
   return participant.name || participant.identity;
@@ -228,7 +285,7 @@ export function useVoiceRoom() {
     setRemoteVolumes(nextVolumes);
   }, []);
 
-  const startScreenShare = useCallback(async () => {
+  const startScreenShare = useCallback(async (settings?: ScreenShareSettings) => {
     const room = roomRef.current;
 
     if (!room || state !== "connected") {
@@ -238,14 +295,46 @@ export function useVoiceRoom() {
 
     try {
       setError("");
-      await room.localParticipant.setScreenShareEnabled(true, {
-        audio: true,
-        video: true,
-        contentHint: "detail",
-        selfBrowserSurface: "exclude",
-        surfaceSwitching: "include",
-        systemAudio: "include",
-      });
+      const shareSettings = settings ?? DEFAULT_SCREEN_SHARE_SETTINGS;
+      const resolution =
+        shareSettings.resolution === "source"
+          ? undefined
+          : SCREEN_SHARE_RESOLUTIONS[shareSettings.resolution];
+
+      await room.localParticipant.setScreenShareEnabled(
+        true,
+        {
+          audio: shareSettings.captureAudio
+            ? {
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+                restrictOwnAudio: true,
+              }
+            : false,
+          video: {
+            displaySurface: getDisplaySurface(shareSettings.sourceType),
+          },
+          resolution: resolution
+            ? {
+                ...resolution,
+                frameRate: shareSettings.frameRate,
+              }
+            : undefined,
+          contentHint: getContentHint(shareSettings),
+          selfBrowserSurface: "exclude",
+          surfaceSwitching: "include",
+          systemAudio: shareSettings.captureAudio ? "include" : "exclude",
+        },
+        {
+          screenShareEncoding: {
+            maxBitrate: shareSettings.bitrateKbps * 1000,
+            maxFramerate: shareSettings.frameRate,
+            priority: "high",
+          },
+          simulcast: true,
+        },
+      );
       refreshLocalScreenShareState();
     } catch (err) {
       refreshLocalScreenShareState();

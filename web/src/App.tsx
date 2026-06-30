@@ -23,7 +23,11 @@ import {
 import type { Channel, ChannelMember, Guild, GuildInvitation, Message, User } from "./api";
 import { VoicePanel } from "./voice/VoicePanel";
 import { ScreenShareStage } from "./voice/ScreenShareStage";
-import type { VoiceSettings } from "./voice/useVoiceRoom";
+import { ScreenSharePicker } from "./voice/ScreenSharePicker";
+import type {
+  ScreenShareSettings,
+  VoiceSettings,
+} from "./voice/useVoiceRoom";
 import { useVoiceRoom } from "./voice/useVoiceRoom";
 
 type AuthMode = "login" | "register";
@@ -273,6 +277,7 @@ function App() {
   const [inviteUsername, setInviteUsername] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isScreenSharePickerOpen, setIsScreenSharePickerOpen] = useState(false);
   const [voiceUserMenu, setVoiceUserMenu] = useState<VoiceUserMenu>(null);
 
   const [status, setStatus] = useState("Готов к работе");
@@ -929,6 +934,20 @@ function App() {
       userId: user.id,
       username: user.username,
     });
+  }
+
+  async function handleScreenShareAction() {
+    if (voice.isScreenSharing) {
+      await voice.stopScreenShare();
+      return;
+    }
+
+    setIsScreenSharePickerOpen(true);
+  }
+
+  async function handleStartScreenShare(settings: ScreenShareSettings) {
+    setIsScreenSharePickerOpen(false);
+    await voice.startScreenShare(settings);
   }
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
@@ -1800,6 +1819,13 @@ function App() {
         />
       )}
 
+      {isScreenSharePickerOpen && (
+        <ScreenSharePicker
+          onClose={() => setIsScreenSharePickerOpen(false)}
+          onStart={handleStartScreenShare}
+        />
+      )}
+
       {voiceUserMenu && (
         <div
           className="voiceUserMenu"
@@ -1849,7 +1875,7 @@ function App() {
         remoteVolumes={voice.remoteVolumes}
         isScreenSharing={voice.isScreenSharing}
         onToggleMute={voice.toggleMute}
-        onToggleScreenShare={voice.toggleScreenShare}
+        onToggleScreenShare={handleScreenShareAction}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLeave={voice.leaveVoice}
       />

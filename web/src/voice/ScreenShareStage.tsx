@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ScreenShareElement } from "./useVoiceRoom";
 
 type ScreenShareStageProps = {
@@ -13,6 +13,25 @@ export function ScreenShareStage({
   onStopLocalShare,
 }: ScreenShareStageProps) {
   const stageRefs = useRef(new Map<string, HTMLDivElement>());
+  const [fullscreenShareId, setFullscreenShareId] = useState("");
+
+  const requestFullscreen = async (shareId: string) => {
+    const node = stageRefs.current.get(shareId);
+
+    if (!node) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+
+      await node.requestFullscreen();
+    } catch {
+      setFullscreenShareId(shareId);
+    }
+  };
 
   useEffect(() => {
     const activeIds = new Set(screenShares.map((share) => share.id));
@@ -34,6 +53,20 @@ export function ScreenShareStage({
       node.replaceChildren(share.element);
     });
   }, [screenShares]);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      if (!document.fullscreenElement) {
+        setFullscreenShareId("");
+      }
+    };
+
+    document.addEventListener("fullscreenchange", syncFullscreen);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+    };
+  }, []);
 
   if (!isLocalSharing && screenShares.length === 0) {
     return null;
@@ -61,7 +94,14 @@ export function ScreenShareStage({
       {screenShares.length > 0 ? (
         <div className="screenShareGrid">
           {screenShares.map((share) => (
-            <article className="screenShareTile" key={share.id}>
+            <article
+              className={
+                fullscreenShareId === share.id
+                  ? "screenShareTile fullscreen"
+                  : "screenShareTile"
+              }
+              key={share.id}
+            >
               <div
                 className="screenShareVideo"
                 ref={(node) => {
@@ -71,7 +111,13 @@ export function ScreenShareStage({
                 }}
               />
               <div className="screenShareCaption">
-                {share.username || share.userId}
+                <span>{share.username || share.userId}</span>
+                <button
+                  onClick={() => requestFullscreen(share.id)}
+                  type="button"
+                >
+                  Во весь экран
+                </button>
               </div>
             </article>
           ))}
