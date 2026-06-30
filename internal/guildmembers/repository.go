@@ -227,6 +227,39 @@ func (r *Repository) CanAccessChannel(ctx context.Context, channelID string, use
 	return exists, nil
 }
 
+func (r *Repository) CanAccessVoiceChannel(
+	ctx context.Context,
+	guildID uuid.UUID,
+	channelID uuid.UUID,
+	userID uuid.UUID,
+) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM channels c
+			JOIN guilds g ON g.id = c.guild_id
+			LEFT JOIN guild_members gm
+				ON gm.guild_id = c.guild_id
+				AND gm.user_id = $3
+			WHERE c.id = $2
+				AND c.guild_id = $1
+				AND c.type = 'voice'
+				AND (
+					g.owner_id = $3
+					OR gm.user_id = $3
+				)
+		);
+	`
+
+	var exists bool
+
+	err := r.db.QueryRow(ctx, query, guildID, channelID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]ChannelMember, error) {
 	query := `
 		WITH channel_guild AS (

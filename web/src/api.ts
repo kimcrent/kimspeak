@@ -4,11 +4,19 @@ const API_BASE_URL = normalizeBaseUrl(
   import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_BASE_URL,
 );
 
+
+
 type TauriApiResponse = {
   ok: boolean;
   status: number;
   text: string;
   contentType?: string | null;
+};
+
+export type VoiceTokenResponse = {
+  url: string;
+  token: string;
+  room: string;
 };
 
 function normalizeBaseUrl(baseUrl?: string): string {
@@ -382,6 +390,24 @@ export async function listMessages(token: string, channelId: string): Promise<Me
   );
 
   return data.messages || [];
+}
+
+export async function createVoiceToken(
+  token: string,
+  guildId: string,
+  channelId: string,
+): Promise<VoiceTokenResponse> {
+  return request<VoiceTokenResponse>(
+    "/voice/token",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        guild_id: guildId,
+        channel_id: channelId,
+      }),
+    },
+    token,
+  );
 }
 
 export async function createMessage(

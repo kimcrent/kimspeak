@@ -1,887 +1,475 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ConnectionState,
+  RemoteParticipant,
+  RemoteTrack,
+  Room,
+  RoomEvent,
+  Track,
+} from "livekit-client";
+import { createVoiceToken } from "../api";
+
+export type VoiceState = "idle" | "connecting" | "connected" | "error";
 
 export type VoiceSettings = {
   muted: boolean;
-  echoCancellation: boolean;
-  noiseSuppression: boolean;
-  autoGainControl: boolean;
   inputGain: number;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
   bitrateKbps: number;
 };
 
 export type VoiceUser = {
   id: string;
   username: string;
-  settings: VoiceSettings;
+  settings: Pick<VoiceSettings, "muted" | "noiseSuppression">;
 };
 
-export type RemoteVoiceStream = {
+export type RemoteAudioElement = {
   id: string;
-  trackId: string;
-  userId: string | null;
-  stream: MediaStream;
+  userId: string;
+  element: HTMLMediaElement;
 };
 
-type SignalMessage = {
-  type:
-    | "offer"
-    | "answer"
-    | "candidate"
-    | "error"
-    | "voice_state"
-    | "voice_settings";
-  sdp?: RTCSessionDescriptionInit;
-  candidate?: RTCIceCandidateInit;
-  settings?: VoiceSettings;
-  error?: string;
-  users?: VoiceUser[];
+export type ScreenShareElement = {
+  id: string;
+  userId: string;
+  username: string;
+  element: HTMLMediaElement;
 };
 
-type VoiceState = "idle" | "connecting" | "connected" | "error";
-
-type AudioTrackConstraints = MediaTrackConstraints & {
-  noiseSuppression?: boolean;
-  autoGainControl?: boolean;
+type JoinVoiceArgs = {
+  authToken: string;
+  channelId: string;
+  channelName: string;
+  guildId: string;
+  userId: string;
+  username: string;
 };
-
-type WindowWithWebAudio = Window &
-  typeof globalThis & {
-    webkitAudioContext?: typeof AudioContext;
-  };
 
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   muted: false,
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
   inputGain: 1,
+  noiseSuppression: true,
+  echoCancellation: true,
+  autoGainControl: true,
   bitrateKbps: 64,
 };
 
-const VOICE_SETTINGS_KEY = "kimspeak_voice_settings";
-const REMOTE_VOLUME_KEY = "kimspeak_remote_voice_volumes";
-const SETTINGS_BROADCAST_DELAY = 120;
-const CONNECTION_RECOVERY_DELAY = 4500;
-
-const API_BASE_URL = normalizeBaseUrl(
-  import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_BASE_URL,
-);
-const WS_URL = toWebSocketBaseUrl(API_BASE_URL);
-const ICE_SERVERS = loadIceServers();
-
-function normalizeBaseUrl(baseUrl?: string): string {
-  const normalized = baseUrl?.trim() || "/api";
-  return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+function getParticipantName(participant: RemoteParticipant) {
+  return participant.name || participant.identity;
 }
 
-function toWebSocketBaseUrl(baseUrl: string): string {
-  if (baseUrl.startsWith("/")) {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${protocol}//${window.location.host}${baseUrl}`;
-  }
-
-  return baseUrl.replace(/^http/i, "ws");
-}
-
-function splitEnvList(value?: string): string[] {
-  return (value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function loadIceServers(): RTCIceServer[] {
-  const stunUrls = splitEnvList(import.meta.env.VITE_WEBRTC_STUN_URLS);
-  const turnUrls = splitEnvList(import.meta.env.VITE_WEBRTC_TURN_URLS);
-  const iceServers: RTCIceServer[] = [
-    {
-      urls: stunUrls.length ? stunUrls : "stun:stun.l.google.com:19302",
-    },
-  ];
-
-  if (turnUrls.length) {
-    iceServers.push({
-      urls: turnUrls,
-      username: import.meta.env.VITE_WEBRTC_TURN_USERNAME,
-      credential: import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL,
-    });
-  }
-
-  return iceServers;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeRemoteVolume(value: number): number {
-  return Number.isFinite(value) ? clamp(value, 0, 2) : 1;
-}
-
-function normalizeVoiceSettings(
-  value?: Partial<VoiceSettings> | null,
-): VoiceSettings {
-  const settings = value || {};
-  const inputGain = Number(settings.inputGain ?? DEFAULT_VOICE_SETTINGS.inputGain);
-  const bitrateKbps = Number(
-    settings.bitrateKbps ?? DEFAULT_VOICE_SETTINGS.bitrateKbps,
-  );
-
-  return {
-    muted: Boolean(settings.muted ?? DEFAULT_VOICE_SETTINGS.muted),
-    echoCancellation: Boolean(
-      settings.echoCancellation ?? DEFAULT_VOICE_SETTINGS.echoCancellation,
-    ),
-    noiseSuppression: Boolean(
-      settings.noiseSuppression ?? DEFAULT_VOICE_SETTINGS.noiseSuppression,
-    ),
-    autoGainControl: Boolean(
-      settings.autoGainControl ?? DEFAULT_VOICE_SETTINGS.autoGainControl,
-    ),
-    inputGain: Number.isFinite(inputGain) ? clamp(inputGain, 0, 2) : 1,
-    bitrateKbps: Number.isFinite(bitrateKbps)
-      ? Math.round(clamp(bitrateKbps, 16, 128))
-      : 64,
-  };
-}
-
-function readStoredVoiceSettings(): VoiceSettings {
-  try {
-    const raw = localStorage.getItem(VOICE_SETTINGS_KEY);
-    return raw
-      ? normalizeVoiceSettings(JSON.parse(raw) as Partial<VoiceSettings>)
-      : DEFAULT_VOICE_SETTINGS;
-  } catch {
-    return DEFAULT_VOICE_SETTINGS;
-  }
-}
-
-function persistVoiceSettings(settings: VoiceSettings) {
-  try {
-    localStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    // Настройки микрофона не критичны, если хранилище недоступно.
-  }
-}
-
-function readStoredRemoteVolumes(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem(REMOTE_VOLUME_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    const volumes: Record<string, number> = {};
-
-    for (const [userId, volume] of Object.entries(parsed)) {
-      volumes[userId] = normalizeRemoteVolume(Number(volume));
-    }
-
-    return volumes;
-  } catch {
-    return {};
-  }
-}
-
-function persistRemoteVolumes(volumes: Record<string, number>) {
-  try {
-    localStorage.setItem(REMOTE_VOLUME_KEY, JSON.stringify(volumes));
-  } catch {
-    // Персональная громкость не должна ломать голос, если storage недоступен.
-  }
-}
-
-function getAudioConstraints(settings: VoiceSettings): AudioTrackConstraints {
-  return {
-    echoCancellation: settings.echoCancellation,
-    noiseSuppression: settings.noiseSuppression,
-    autoGainControl: settings.autoGainControl,
-    channelCount: 1,
-    sampleRate: 48000,
-  };
-}
-
-function getAudioContextConstructor(): typeof AudioContext | null {
-  const audioWindow = window as WindowWithWebAudio;
-  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null;
-}
-
-function getOwnerIdFromTrackId(trackId: string): string | null {
-  const separatorIndex = trackId.indexOf("_");
-
-  if (separatorIndex <= 0) {
-    return null;
-  }
-
-  return trackId.slice(0, separatorIndex);
-}
-
-async function setSenderBitrate(
-  sender: RTCRtpSender | null,
-  bitrateKbps: number,
-) {
-  if (!sender) {
-    return;
-  }
-
-  const parameters = sender.getParameters();
-
-  if (!parameters.encodings) {
-    parameters.encodings = [{}];
-  }
-
-  parameters.encodings[0].maxBitrate = bitrateKbps * 1000;
-  await sender.setParameters(parameters);
-}
-
-function getVoiceErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) {
-    return "Не удалось войти в голосовой канал";
-  }
-
-  if (err.name === "NotAllowedError") {
-    return "Нет доступа к микрофону. Разрешите KIMSpeak доступ к микрофону в настройках macOS.";
-  }
-
-  if (err.name === "NotFoundError") {
-    return "Микрофон не найден. Проверьте устройство ввода в macOS.";
-  }
-
-  if (err.name === "NotReadableError") {
-    return "Микрофон занят другим приложением или недоступен.";
-  }
-
-  return err.message || "Не удалось войти в голосовой канал";
+function getParticipantMuted(participant: RemoteParticipant) {
+  const publication = participant.getTrackPublication(Track.Source.Microphone);
+  return publication?.isMuted ?? false;
 }
 
 export function useVoiceRoom() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const sourceStreamRef = useRef<MediaStream | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const audioSenderRef = useRef<RTCRtpSender | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const settingsBroadcastTimerRef = useRef<number | null>(null);
-  const pendingSettingsRef = useRef<VoiceSettings | null>(null);
-  const voiceSessionRef = useRef(0);
-  const connectionRecoveryTimerRef = useRef<number | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const currentUserRef = useRef<{ id: string; username: string } | null>(null);
+  const audioElementsRef = useRef(new Map<string, RemoteAudioElement>());
+  const screenShareElementsRef = useRef(new Map<string, ScreenShareElement>());
+  const remoteVolumesRef = useRef<Record<string, number>>({});
 
-  const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
   const [state, setState] = useState<VoiceState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [currentChannelId, setCurrentChannelId] = useState<string | null>(null);
-  const [currentChannelName, setCurrentChannelName] = useState<string | null>(
-    null,
-  );
-  const [remoteStreams, setRemoteStreams] = useState<RemoteVoiceStream[]>([]);
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(
-    readStoredVoiceSettings,
-  );
-  const [remoteVolumes, setRemoteVolumes] = useState<Record<string, number>>(
-    readStoredRemoteVolumes,
-  );
-  const voiceSettingsRef = useRef<VoiceSettings>(voiceSettings);
-  const remoteVolumesRef = useRef<Record<string, number>>(remoteVolumes);
+  const [error, setError] = useState("");
+  const [currentChannelId, setCurrentChannelId] = useState("");
+  const [currentChannelName, setCurrentChannelName] = useState("");
+  const [voiceSettings, setVoiceSettings] = useState(DEFAULT_VOICE_SETTINGS);
+  const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
+  const [remoteStreams, setRemoteStreams] = useState<RemoteAudioElement[]>([]);
+  const [screenShares, setScreenShares] = useState<ScreenShareElement[]>([]);
+  const [remoteVolumes, setRemoteVolumes] = useState<Record<string, number>>({});
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-  const sendSignal = useCallback((message: SignalMessage) => {
-    const ws = wsRef.current;
+  const muted = voiceSettings.muted;
 
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+  const refreshParticipants = useCallback(() => {
+    const room = roomRef.current;
+    const currentUser = currentUserRef.current;
+
+    if (!room || !currentUser) {
+      setVoiceUsers([]);
       return;
     }
 
-    ws.send(JSON.stringify(message));
-  }, []);
+    const nextUsers: VoiceUser[] = [
+      {
+        id: currentUser.id,
+        username: currentUser.username,
+        settings: {
+          muted: voiceSettings.muted,
+          noiseSuppression: voiceSettings.noiseSuppression,
+        },
+      },
+      ...Array.from(room.remoteParticipants.values()).map((participant) => ({
+        id: participant.identity,
+        username: getParticipantName(participant),
+        settings: {
+          muted: getParticipantMuted(participant),
+          noiseSuppression: true,
+        },
+      })),
+    ];
 
-  const clearSettingsBroadcast = useCallback(() => {
-    if (settingsBroadcastTimerRef.current === null) {
+    setVoiceUsers(nextUsers);
+  }, [voiceSettings.muted, voiceSettings.noiseSuppression]);
+
+  const detachRemoteTrack = useCallback((trackSid: string) => {
+    const audioItem = audioElementsRef.current.get(trackSid);
+
+    if (audioItem) {
+      audioItem.element.pause();
+      audioItem.element.remove();
+      audioElementsRef.current.delete(trackSid);
+      setRemoteStreams(Array.from(audioElementsRef.current.values()));
       return;
     }
 
-    window.clearTimeout(settingsBroadcastTimerRef.current);
-    settingsBroadcastTimerRef.current = null;
-    pendingSettingsRef.current = null;
-  }, []);
+    const screenShareItem = screenShareElementsRef.current.get(trackSid);
 
-  const clearConnectionRecoveryTimer = useCallback(() => {
-    if (connectionRecoveryTimerRef.current === null) {
+    if (!screenShareItem) {
       return;
     }
 
-    window.clearTimeout(connectionRecoveryTimerRef.current);
-    connectionRecoveryTimerRef.current = null;
+    screenShareItem.element.pause();
+    screenShareItem.element.remove();
+    screenShareElementsRef.current.delete(trackSid);
+    setScreenShares(Array.from(screenShareElementsRef.current.values()));
   }, []);
 
-  const scheduleSettingsBroadcast = useCallback(
-    (settings: VoiceSettings) => {
-      pendingSettingsRef.current = settings;
+  const refreshLocalScreenShareState = useCallback(() => {
+    const room = roomRef.current;
+    const publication = room?.localParticipant.getTrackPublication(
+      Track.Source.ScreenShare,
+    );
 
-      if (settingsBroadcastTimerRef.current !== null) {
-        return;
-      }
-
-      settingsBroadcastTimerRef.current = window.setTimeout(() => {
-        settingsBroadcastTimerRef.current = null;
-
-        const pendingSettings = pendingSettingsRef.current;
-        pendingSettingsRef.current = null;
-
-        if (pendingSettings) {
-          sendSignal({
-            type: "voice_settings",
-            settings: pendingSettings,
-          });
-        }
-      }, SETTINGS_BROADCAST_DELAY);
-    },
-    [sendSignal],
-  );
-
-  const cleanupAudioGraph = useCallback(() => {
-    audioSourceNodeRef.current?.disconnect();
-    gainNodeRef.current?.disconnect();
-
-    if (
-      audioContextRef.current &&
-      audioContextRef.current.state !== "closed"
-    ) {
-      void audioContextRef.current.close();
-    }
-
-    audioSourceNodeRef.current = null;
-    gainNodeRef.current = null;
-    audioContextRef.current = null;
+    setIsScreenSharing(Boolean(publication && !publication.isMuted));
   }, []);
 
-  const createLocalAudioStream = useCallback(
-    async (sourceStream: MediaStream, settings: VoiceSettings) => {
-      cleanupAudioGraph();
+  const leaveVoice = useCallback(() => {
+    const room = roomRef.current;
 
-      const sourceTrack = sourceStream.getAudioTracks()[0];
-      const AudioContextConstructor = getAudioContextConstructor();
+    audioElementsRef.current.forEach((item) => {
+      item.element.pause();
+      item.element.remove();
+    });
+    audioElementsRef.current.clear();
+    setRemoteStreams([]);
 
-      if (!sourceTrack || !AudioContextConstructor) {
-        return sourceStream;
-      }
+    screenShareElementsRef.current.forEach((item) => {
+      item.element.pause();
+      item.element.remove();
+    });
+    screenShareElementsRef.current.clear();
+    setScreenShares([]);
+    setIsScreenSharing(false);
 
-      try {
-        const audioContext = new AudioContextConstructor({
-          latencyHint: "interactive",
-        });
-        const sourceNode = audioContext.createMediaStreamSource(
-          new MediaStream([sourceTrack]),
-        );
-        const gainNode = audioContext.createGain();
-        const destination = audioContext.createMediaStreamDestination();
-
-        gainNode.gain.value = settings.inputGain;
-        sourceNode.connect(gainNode);
-        gainNode.connect(destination);
-
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
-        }
-
-        audioContextRef.current = audioContext;
-        audioSourceNodeRef.current = sourceNode;
-        gainNodeRef.current = gainNode;
-
-        return destination.stream;
-      } catch {
-        cleanupAudioGraph();
-        return sourceStream;
-      }
-    },
-    [cleanupAudioGraph],
-  );
-
-  const applyVoiceSettings = useCallback(async (settings: VoiceSettings) => {
-    const sourceStream = sourceStreamRef.current;
-
-    if (sourceStream) {
-      await Promise.all(
-        sourceStream.getAudioTracks().map(async (track) => {
-          track.enabled = !settings.muted;
-
-          try {
-            await track.applyConstraints(getAudioConstraints(settings));
-          } catch {
-            // Не все окружения позволяют менять DSP-флаги на лету.
-          }
-        }),
-      );
+    if (room) {
+      room.disconnect();
+      roomRef.current = null;
     }
 
-    const localStream = localStreamRef.current;
-    if (localStream && localStream !== sourceStream) {
-      for (const track of localStream.getAudioTracks()) {
-        track.enabled = !settings.muted;
-      }
-    }
-
-    const gainNode = gainNodeRef.current;
-    const audioContext = audioContextRef.current;
-    if (gainNode && audioContext) {
-      gainNode.gain.setTargetAtTime(
-        settings.inputGain,
-        audioContext.currentTime,
-        0.02,
-      );
-    }
-
-    try {
-      await setSenderBitrate(audioSenderRef.current, settings.bitrateKbps);
-    } catch {
-      // Bitrate hint может быть недоступен в части WebView/браузеров.
-    }
-  }, []);
-
-  const commitVoiceSettings = useCallback((settings: VoiceSettings) => {
-    voiceSettingsRef.current = settings;
-    setVoiceSettings(settings);
-    persistVoiceSettings(settings);
+    currentUserRef.current = null;
+    setCurrentChannelId("");
+    setCurrentChannelName("");
+    setVoiceUsers([]);
+    setError("");
+    setState("idle");
   }, []);
 
   const updateVoiceSettings = useCallback(
     (patch: Partial<VoiceSettings>) => {
-      const nextSettings = normalizeVoiceSettings({
-        ...voiceSettingsRef.current,
-        ...patch,
+      setVoiceSettings((current) => {
+        const next = { ...current, ...patch };
+        const room = roomRef.current;
+
+        if (room && patch.muted !== undefined && patch.muted !== current.muted) {
+          room.localParticipant
+            .setMicrophoneEnabled(!patch.muted, {
+              echoCancellation: next.echoCancellation,
+              noiseSuppression: next.noiseSuppression,
+              autoGainControl: next.autoGainControl,
+            })
+            .catch((err) => {
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : "Не удалось изменить состояние микрофона",
+              );
+            });
+        }
+
+        return next;
       });
-
-      commitVoiceSettings(nextSettings);
-      void applyVoiceSettings(nextSettings);
-      scheduleSettingsBroadcast(nextSettings);
     },
-    [applyVoiceSettings, commitVoiceSettings, scheduleSettingsBroadcast],
-  );
-
-  const updateRemoteVolume = useCallback((userId: string, volume: number) => {
-    const nextVolume = normalizeRemoteVolume(volume);
-    const nextVolumes = {
-      ...remoteVolumesRef.current,
-      [userId]: nextVolume,
-    };
-
-    remoteVolumesRef.current = nextVolumes;
-    setRemoteVolumes(nextVolumes);
-    persistRemoteVolumes(nextVolumes);
-  }, []);
-
-  const leaveVoice = useCallback(() => {
-    voiceSessionRef.current += 1;
-    clearSettingsBroadcast();
-    clearConnectionRecoveryTimer();
-
-    const sourceStream = sourceStreamRef.current;
-    if (sourceStream) {
-      for (const track of sourceStream.getTracks()) {
-        track.stop();
-      }
-    }
-
-    const localStream = localStreamRef.current;
-    if (localStream && localStream !== sourceStream) {
-      for (const track of localStream.getTracks()) {
-        track.stop();
-      }
-    }
-
-    cleanupAudioGraph();
-
-    const pc = pcRef.current;
-    if (pc) {
-      pc.onicecandidate = null;
-      pc.onconnectionstatechange = null;
-      pc.ontrack = null;
-      pc.close();
-    }
-
-    const ws = wsRef.current;
-    if (ws) {
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onerror = null;
-      ws.onclose = null;
-
-      if (
-        ws.readyState === WebSocket.CONNECTING ||
-        ws.readyState === WebSocket.OPEN
-      ) {
-        ws.close(1000, "leave");
-      } else {
-        ws.close();
-      }
-    }
-
-    sourceStreamRef.current = null;
-    localStreamRef.current = null;
-    audioSenderRef.current = null;
-    pcRef.current = null;
-    wsRef.current = null;
-
-    setState("idle");
-    setError(null);
-    setCurrentChannelId(null);
-    setCurrentChannelName(null);
-    setRemoteStreams([]);
-    setVoiceUsers([]);
-  }, [cleanupAudioGraph, clearConnectionRecoveryTimer, clearSettingsBroadcast]);
-
-  const joinVoice = useCallback(
-    async (params: {
-      channelId: string;
-      channelName: string;
-      userId: string;
-      username: string;
-    }) => {
-      const { channelId, channelName, userId, username } = params;
-
-      if (!channelId || !userId) {
-        setError("channelId и userId обязательны");
-        setState("error");
-        return;
-      }
-
-      leaveVoice();
-
-      const sessionId = voiceSessionRef.current + 1;
-      voiceSessionRef.current = sessionId;
-      const isCurrentSession = () => voiceSessionRef.current === sessionId;
-      const initialSettings = voiceSettingsRef.current;
-
-      setState("connecting");
-      setError(null);
-      setCurrentChannelId(channelId);
-      setCurrentChannelName(channelName);
-      setRemoteStreams([]);
-
-      try {
-        const sourceStream = await navigator.mediaDevices.getUserMedia({
-          audio: getAudioConstraints(initialSettings),
-          video: false,
-        });
-
-        if (!isCurrentSession()) {
-          for (const track of sourceStream.getTracks()) {
-            track.stop();
-          }
-          return;
-        }
-
-        const localStream = await createLocalAudioStream(
-          sourceStream,
-          initialSettings,
-        );
-
-        if (!isCurrentSession()) {
-          for (const track of sourceStream.getTracks()) {
-            track.stop();
-          }
-
-          if (localStream !== sourceStream) {
-            for (const track of localStream.getTracks()) {
-              track.stop();
-            }
-          }
-          return;
-        }
-
-        sourceStreamRef.current = sourceStream;
-        localStreamRef.current = localStream;
-
-        const pc = new RTCPeerConnection({
-          iceServers: ICE_SERVERS,
-        });
-
-        pcRef.current = pc;
-
-        pc.onicecandidate = (event) => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          if (!event.candidate) {
-            return;
-          }
-
-          sendSignal({
-            type: "candidate",
-            candidate: event.candidate.toJSON(),
-          });
-        };
-
-        pc.onconnectionstatechange = () => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          if (pc.connectionState === "connected") {
-            clearConnectionRecoveryTimer();
-            setError(null);
-            setState("connected");
-            return;
-          }
-
-          if (pc.connectionState === "disconnected") {
-            clearConnectionRecoveryTimer();
-            setError("Голосовое соединение восстанавливается...");
-            connectionRecoveryTimerRef.current = window.setTimeout(() => {
-              connectionRecoveryTimerRef.current = null;
-
-              if (
-                isCurrentSession() &&
-                pc.connectionState === "disconnected"
-              ) {
-                setError("WebRTC соединение потеряно");
-                setState("error");
-              }
-            }, CONNECTION_RECOVERY_DELAY);
-            return;
-          }
-
-          if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-            clearConnectionRecoveryTimer();
-            setError(`WebRTC соединение ${pc.connectionState}`);
-            setState("error");
-          }
-        };
-
-        pc.ontrack = (event) => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          const stream = event.streams[0];
-
-          if (!stream) {
-            return;
-          }
-
-          const remoteStream: RemoteVoiceStream = {
-            id: `${stream.id}:${event.track.id}`,
-            trackId: event.track.id,
-            userId: getOwnerIdFromTrackId(event.track.id),
-            stream,
-          };
-
-          event.track.onended = () => {
-            if (!isCurrentSession()) {
-              return;
-            }
-
-            setRemoteStreams((prev) =>
-              prev.filter((item) => item.trackId !== event.track.id),
-            );
-          };
-
-          setRemoteStreams((prev) => {
-            const exists = prev.some((item) => item.trackId === event.track.id);
-            if (exists) {
-              return prev.map((item) =>
-                item.trackId === event.track.id ? remoteStream : item,
-              );
-            }
-
-            return [...prev, remoteStream];
-          });
-        };
-
-        for (const track of localStream.getTracks()) {
-          const sender = pc.addTrack(track, localStream);
-
-          if (track.kind === "audio") {
-            audioSenderRef.current = sender;
-            await setSenderBitrate(sender, initialSettings.bitrateKbps).catch(
-              () => undefined,
-            );
-          }
-        }
-
-        await applyVoiceSettings(initialSettings);
-
-        const wsUrl = `${WS_URL}/voice/ws?channel_id=${encodeURIComponent(
-          channelId,
-        )}&user_id=${encodeURIComponent(userId)}&username=${encodeURIComponent(
-          username,
-        )}`;
-        const ws = new WebSocket(wsUrl);
-        let wsOpened = false;
-
-        wsRef.current = ws;
-
-        ws.onopen = async () => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          wsOpened = true;
-
-          try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-
-            sendSignal({
-              type: "offer",
-              sdp: pc.localDescription ?? undefined,
-            });
-            sendSignal({
-              type: "voice_settings",
-              settings: voiceSettingsRef.current,
-            });
-          } catch (err) {
-            if (!isCurrentSession()) {
-              return;
-            }
-
-            setError(getVoiceErrorMessage(err));
-            setState("error");
-            leaveVoice();
-          }
-        };
-
-        ws.onmessage = async (event) => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          try {
-            const message = JSON.parse(event.data) as SignalMessage;
-
-            if (message.type === "voice_state") {
-              setVoiceUsers(
-                (message.users ?? []).map((user) => ({
-                  ...user,
-                  settings: normalizeVoiceSettings(user.settings),
-                })),
-              );
-              return;
-            }
-
-            if (message.type === "answer") {
-              if (!message.sdp) {
-                return;
-              }
-
-              await pc.setRemoteDescription(message.sdp);
-              return;
-            }
-
-            if (message.type === "offer") {
-              if (!message.sdp) {
-                return;
-              }
-
-              await pc.setRemoteDescription(message.sdp);
-
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-
-              sendSignal({
-                type: "answer",
-                sdp: pc.localDescription ?? undefined,
-              });
-
-              return;
-            }
-
-            if (message.type === "candidate") {
-              if (!message.candidate) {
-                return;
-              }
-
-              await pc.addIceCandidate(message.candidate);
-              return;
-            }
-
-            if (message.type === "error") {
-              setError(message.error ?? "Ошибка voice-сервера");
-              setState("error");
-            }
-          } catch (err) {
-            if (!isCurrentSession()) {
-              return;
-            }
-
-            setError(getVoiceErrorMessage(err));
-            setState("error");
-          }
-        };
-
-        ws.onerror = () => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          setError("Не удалось подключиться к voice WebSocket");
-          setState("error");
-        };
-
-        ws.onclose = (event) => {
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          if (!wsOpened) {
-            setError(`Voice WebSocket закрылся до подключения (${event.code})`);
-            setState("error");
-            return;
-          }
-
-          if (event.code !== 1000) {
-            setError(`Voice WebSocket закрыт (${event.code})`);
-            setState("error");
-            return;
-          }
-
-          setState((current) => {
-            if (current === "error") {
-              return current;
-            }
-
-            return "idle";
-          });
-        };
-      } catch (err) {
-        if (voiceSessionRef.current !== sessionId) {
-          return;
-        }
-
-        const message = getVoiceErrorMessage(err);
-
-        setError(message);
-        setState("error");
-        leaveVoice();
-      }
-    },
-    [
-      applyVoiceSettings,
-      clearConnectionRecoveryTimer,
-      createLocalAudioStream,
-      leaveVoice,
-      sendSignal,
-    ],
+    [],
   );
 
   const toggleMute = useCallback(() => {
-    updateVoiceSettings({
-      muted: !voiceSettingsRef.current.muted,
-    });
-  }, [updateVoiceSettings]);
+    updateVoiceSettings({ muted: !voiceSettings.muted });
+  }, [updateVoiceSettings, voiceSettings.muted]);
 
-  return {
-    state,
-    error,
-    muted: voiceSettings.muted,
-    voiceSettings,
-    currentChannelId,
-    currentChannelName,
-    remoteStreams,
-    remoteVolumes,
-    voiceUsers,
-    joinVoice,
-    leaveVoice,
-    toggleMute,
-    updateVoiceSettings,
-    updateRemoteVolume,
-  };
+  const updateRemoteVolume = useCallback((userId: string, volume: number) => {
+    const normalizedVolume = Math.max(0, Math.min(2, volume));
+    const nextVolumes = {
+      ...remoteVolumesRef.current,
+      [userId]: normalizedVolume,
+    };
+
+    remoteVolumesRef.current = nextVolumes;
+    audioElementsRef.current.forEach((item) => {
+      if (item.userId === userId) {
+        item.element.volume = normalizedVolume;
+      }
+    });
+    setRemoteVolumes(nextVolumes);
+  }, []);
+
+  const startScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+
+    if (!room || state !== "connected") {
+      setError("Сначала войдите в голосовой канал");
+      return;
+    }
+
+    try {
+      setError("");
+      await room.localParticipant.setScreenShareEnabled(true, {
+        audio: true,
+        video: true,
+        contentHint: "detail",
+        selfBrowserSurface: "exclude",
+        surfaceSwitching: "include",
+        systemAudio: "include",
+      });
+      refreshLocalScreenShareState();
+    } catch (err) {
+      refreshLocalScreenShareState();
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось начать демонстрацию экрана",
+      );
+    }
+  }, [refreshLocalScreenShareState, state]);
+
+  const stopScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+
+    if (!room) {
+      setIsScreenSharing(false);
+      return;
+    }
+
+    try {
+      setError("");
+      await room.localParticipant.setScreenShareEnabled(false);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось остановить демонстрацию экрана",
+      );
+    } finally {
+      refreshLocalScreenShareState();
+    }
+  }, [refreshLocalScreenShareState]);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (isScreenSharing) {
+      await stopScreenShare();
+      return;
+    }
+
+    await startScreenShare();
+  }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
+  const joinVoice = useCallback(
+    async (args: JoinVoiceArgs) => {
+      leaveVoice();
+      setState("connecting");
+      setError("");
+      setCurrentChannelId(args.channelId);
+      setCurrentChannelName(args.channelName);
+      currentUserRef.current = {
+        id: args.userId,
+        username: args.username,
+      };
+
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+
+      roomRef.current = room;
+
+      const syncParticipants = () => refreshParticipants();
+
+      const handleTrackSubscribed = (
+        track: RemoteTrack,
+        publication: { trackSid: string },
+        participant: RemoteParticipant,
+      ) => {
+        if (
+          track.kind === Track.Kind.Video &&
+          track.source === Track.Source.ScreenShare
+        ) {
+          const element = track.attach();
+          element.autoplay = true;
+          element.dataset.trackSid = publication.trackSid;
+          element.dataset.userId = participant.identity;
+          if (element instanceof HTMLVideoElement) {
+            element.playsInline = true;
+          }
+
+          screenShareElementsRef.current.set(publication.trackSid, {
+            id: publication.trackSid,
+            userId: participant.identity,
+            username: getParticipantName(participant),
+            element,
+          });
+          setScreenShares(Array.from(screenShareElementsRef.current.values()));
+          return;
+        }
+
+        if (
+          track.kind !== Track.Kind.Audio &&
+          track.source !== Track.Source.ScreenShareAudio
+        ) {
+          return;
+        }
+
+        const element = track.attach();
+        const volume = remoteVolumesRef.current[participant.identity] ?? 1;
+        element.autoplay = true;
+        element.dataset.trackSid = publication.trackSid;
+        element.volume = volume;
+
+        audioElementsRef.current.set(publication.trackSid, {
+          id: publication.trackSid,
+          userId: participant.identity,
+          element,
+        });
+        setRemoteStreams(Array.from(audioElementsRef.current.values()));
+      };
+
+      const handleTrackUnsubscribed = (
+        track: RemoteTrack,
+        publication: { trackSid: string },
+      ) => {
+        track.detach();
+        detachRemoteTrack(publication.trackSid);
+      };
+
+      room
+        .on(RoomEvent.ParticipantConnected, syncParticipants)
+        .on(RoomEvent.ParticipantDisconnected, syncParticipants)
+        .on(RoomEvent.TrackMuted, syncParticipants)
+        .on(RoomEvent.TrackUnmuted, syncParticipants)
+        .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
+        .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
+        .on(RoomEvent.LocalTrackPublished, refreshLocalScreenShareState)
+        .on(RoomEvent.LocalTrackUnpublished, refreshLocalScreenShareState)
+        .on(RoomEvent.Disconnected, () => {
+          if (roomRef.current === room) {
+            leaveVoice();
+          }
+        });
+
+      try {
+        const voiceToken = await createVoiceToken(
+          args.authToken,
+          args.guildId,
+          args.channelId,
+        );
+
+        await room.connect(voiceToken.url, voiceToken.token);
+        await room.localParticipant.setMicrophoneEnabled(
+          !voiceSettings.muted,
+          {
+            echoCancellation: voiceSettings.echoCancellation,
+            noiseSuppression: voiceSettings.noiseSuppression,
+            autoGainControl: voiceSettings.autoGainControl,
+          },
+        );
+
+        if (room.state === ConnectionState.Connected) {
+          setState("connected");
+        }
+
+        refreshParticipants();
+      } catch (err) {
+        room.disconnect();
+        roomRef.current = null;
+        setState("error");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Не удалось подключиться к голосовому каналу",
+        );
+      }
+    },
+    [
+      detachRemoteTrack,
+      leaveVoice,
+      refreshLocalScreenShareState,
+      refreshParticipants,
+      voiceSettings,
+    ],
+  );
+
+  useEffect(() => {
+    refreshParticipants();
+  }, [refreshParticipants]);
+
+  useEffect(() => leaveVoice, [leaveVoice]);
+
+  return useMemo(
+    () => ({
+      state,
+      error,
+      muted,
+      voiceSettings,
+      currentChannelId,
+      currentChannelName,
+      voiceUsers,
+      remoteStreams,
+      screenShares,
+      remoteVolumes,
+      isScreenSharing,
+      joinVoice,
+      leaveVoice,
+      toggleMute,
+      startScreenShare,
+      stopScreenShare,
+      toggleScreenShare,
+      updateVoiceSettings,
+      updateRemoteVolume,
+    }),
+    [
+      currentChannelId,
+      currentChannelName,
+      error,
+      joinVoice,
+      leaveVoice,
+      muted,
+      remoteStreams,
+      remoteVolumes,
+      screenShares,
+      isScreenSharing,
+      startScreenShare,
+      stopScreenShare,
+      state,
+      toggleMute,
+      toggleScreenShare,
+      updateRemoteVolume,
+      updateVoiceSettings,
+      voiceSettings,
+      voiceUsers,
+    ],
+  );
 }

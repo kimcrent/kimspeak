@@ -21,9 +21,10 @@ import {
   renameChannel,
 } from "./api";
 import type { Channel, ChannelMember, Guild, GuildInvitation, Message, User } from "./api";
-import { useVoiceRoom } from "./voice/useVoiceRoom";
-import type { VoiceSettings } from "./voice/useVoiceRoom";
 import { VoicePanel } from "./voice/VoicePanel";
+import { ScreenShareStage } from "./voice/ScreenShareStage";
+import type { VoiceSettings } from "./voice/useVoiceRoom";
+import { useVoiceRoom } from "./voice/useVoiceRoom";
 
 type AuthMode = "login" | "register";
 type ChannelDraftType = "text" | "voice";
@@ -916,13 +917,15 @@ function App() {
   function handleJoinVoiceChannel(channel: Channel) {
     setActiveChannelId(channel.id);
 
-    if (!user || voice.currentChannelId === channel.id) {
+    if (!token || !user || voice.currentChannelId === channel.id) {
       return;
     }
 
     voice.joinVoice({
+      authToken: token,
       channelId: channel.id,
       channelName: channel.name,
+      guildId: channel.guild_id,
       userId: user.id,
       username: user.username,
     });
@@ -1511,6 +1514,14 @@ function App() {
             </div>
           )}
 
+          {activeChannel?.type === "voice" && isActiveVoiceChannelJoined && (
+            <ScreenShareStage
+              isLocalSharing={voice.isScreenSharing}
+              screenShares={voice.screenShares}
+              onStopLocalShare={voice.stopScreenShare}
+            />
+          )}
+
           {activeChannel?.type === "text" && isMessagesLoading && (
             <div className="emptyHint">Загружаем сообщения...</div>
           )}
@@ -1836,7 +1847,9 @@ function App() {
         channelName={voice.currentChannelName}
         remoteStreams={voice.remoteStreams}
         remoteVolumes={voice.remoteVolumes}
+        isScreenSharing={voice.isScreenSharing}
         onToggleMute={voice.toggleMute}
+        onToggleScreenShare={voice.toggleScreenShare}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLeave={voice.leaveVoice}
       />

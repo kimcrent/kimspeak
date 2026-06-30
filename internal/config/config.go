@@ -23,6 +23,10 @@ type Config struct {
 	DatabaseHealthPeriod  time.Duration
 	DatabasePingTimeout   time.Duration
 	JWTSecret             string
+
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
 }
 
 func Load() Config {
@@ -45,6 +49,10 @@ func Load() Config {
 		DatabaseHealthPeriod:  getDurationEnv("DATABASE_HEALTH_PERIOD", time.Minute),
 		DatabasePingTimeout:   getDurationEnv("DATABASE_PING_TIMEOUT", 5*time.Second),
 		JWTSecret:             getEnv("JWT_SECRET", "dev-secret-change-me"),
+
+		LiveKitURL:       getEnv("LIVEKIT_URL", "ws://localhost:7880"),
+		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", "secret"),
 	}
 }
 

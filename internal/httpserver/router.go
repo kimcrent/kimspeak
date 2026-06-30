@@ -20,8 +20,6 @@ func (s *Server) NewRouter() http.Handler {
 
 	healthHandler := health.NewHandler(s.db)
 
-	voiceHandler := voice.NewHandler(s.logger)
-
 	usersRepository := users.NewRepository(s.db)
 	authHandler := auth.NewHandler(usersRepository, s.cfg.JWTSecret)
 
@@ -35,8 +33,14 @@ func (s *Server) NewRouter() http.Handler {
 	guildsHandler := guilds.NewHandler(guildsRepository, guildMembersRepo, invitationsRepo, usersRepository)
 	invitationsHandler := invitations.NewHandler(invitationsRepo)
 	messagesHandler := messages.NewHandler(messagesRepo, guildMembersRepo)
+	voiceHandler := voice.NewHandler(
+		s.cfg.LiveKitURL,
+		s.cfg.LiveKitAPIKey,
+		s.cfg.LiveKitAPISecret,
+		guildMembersRepo,
+	)
 
-	mux.HandleFunc("/voice/ws", voiceHandler.ServeWS)
+	mux.Handle("/voice/token", authHandler.AuthMiddleware(http.HandlerFunc(voiceHandler.CreateToken)))
 	mux.HandleFunc("GET /health", healthHandler.Check)
 	mux.HandleFunc("/auth/register", authHandler.Register)
 	mux.HandleFunc("/auth/login", authHandler.Login)
