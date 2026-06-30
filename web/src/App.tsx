@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import "./App.css";
 import {
   acceptGuildInvitation,
@@ -20,14 +20,19 @@ import {
   register,
   renameChannel,
 } from "./api";
-import type { Channel, ChannelMember, Guild, GuildInvitation, Message, User } from "./api";
+import type {
+  Channel,
+  ChannelMember,
+  Guild,
+  GuildInvitation,
+  Message,
+  User,
+} from "./api";
 import { VoicePanel } from "./voice/VoicePanel";
 import { ScreenShareStage } from "./voice/ScreenShareStage";
 import { ScreenSharePicker } from "./voice/ScreenSharePicker";
-import type {
-  ScreenShareSettings,
-  VoiceSettings,
-} from "./voice/useVoiceRoom";
+import { DesktopTitleBar } from "./components/DesktopTitleBar";
+import type { ScreenShareSettings, VoiceSettings } from "./voice/useVoiceRoom";
 import { useVoiceRoom } from "./voice/useVoiceRoom";
 
 type AuthMode = "login" | "register";
@@ -53,6 +58,31 @@ type AppSettingsModalProps = {
 };
 
 const TOKEN_KEY = "kimspeak_token";
+
+type AppShellProps = {
+  children: ReactNode;
+};
+
+function AppShell({ children }: AppShellProps) {
+  return (
+    <div
+      className="desktop-app"
+      onContextMenu={(event) => {
+        const target = event.target as HTMLElement;
+
+        if (target.closest("input, textarea")) {
+          return;
+        }
+
+        event.preventDefault();
+      }}
+    >
+      <DesktopTitleBar />
+
+      <div className="desktop-app__content">{children}</div>
+    </div>
+  );
+}
 
 function getInitial(value: string) {
   return value.trim().charAt(0).toUpperCase() || "K";
@@ -337,7 +367,7 @@ function App() {
   const isActiveVoiceConnecting =
     isActiveVoiceChannelJoined && voice.state === "connecting";
   const voiceUserMenuVolume = voiceUserMenu
-    ? voice.remoteVolumes[voiceUserMenu.userId] ?? 1
+    ? (voice.remoteVolumes[voiceUserMenu.userId] ?? 1)
     : 1;
   const voiceUserMenuStyle = voiceUserMenu
     ? {
@@ -868,9 +898,7 @@ function App() {
       closeRenameModal();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Не удалось переименовать канал",
+        err instanceof Error ? err.message : "Не удалось переименовать канал",
       );
       setStatus("Ошибка переименования");
     } finally {
@@ -895,7 +923,9 @@ function App() {
     try {
       await deleteChannelRequest(token, channelId);
 
-      const nextChannels = channels.filter((channel) => channel.id !== channelId);
+      const nextChannels = channels.filter(
+        (channel) => channel.id !== channelId,
+      );
       if (activeGuildId) {
         channelsCacheRef.current.set(activeGuildId, nextChannels);
       }
@@ -1083,803 +1113,821 @@ function App() {
 
   if (isCheckingAuth) {
     return (
-      <div className="loadingPage">
-        <div className="loadingCard">
-          <div className="brandMark">K</div>
-          <h1>kimspeak</h1>
-          <p>Проверяем авторизацию...</p>
+      <AppShell>
+        <div className="loadingPage">
+          <div className="loadingCard">
+            <div className="brandMark">K</div>
+            <h1>kimspeak</h1>
+            <p>Проверяем авторизацию...</p>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   if (!user) {
     return (
-      <div className="authPage">
-        <section className="authHero">
-          <div className="brandMark">K</div>
-          <h1>kimspeak</h1>
-          <p>
-            Войдите в аккаунт, чтобы открыть серверы, каналы и живую ленту
-            сообщений для вашей команды.
-          </p>
-        </section>
+      <AppShell>
+        <div className="authPage">
+          <section className="authHero">
+            <div className="brandMark">K</div>
+            <h1>kimspeak</h1>
+            <p>
+              Войдите в аккаунт, чтобы открыть серверы, каналы и живую ленту
+              сообщений для вашей команды.
+            </p>
+          </section>
 
-        <section className="authCard">
-          <div className="authTitle">
-            {mode === "login" ? "Вход" : "Регистрация"}
-          </div>
+          <section className="authCard">
+            <div className="authTitle">
+              {mode === "login" ? "Вход" : "Регистрация"}
+            </div>
 
-          <div
-            className="authTabs"
-            role="tablist"
-            aria-label="Режим авторизации"
-          >
-            <button
-              className={mode === "login" ? "authTab active" : "authTab"}
-              onClick={() => setMode("login")}
-              type="button"
+            <div
+              className="authTabs"
+              role="tablist"
+              aria-label="Режим авторизации"
             >
-              Вход
-            </button>
-            <button
-              className={mode === "register" ? "authTab active" : "authTab"}
-              onClick={() => setMode("register")}
-              type="button"
-            >
-              Регистрация
-            </button>
-          </div>
+              <button
+                className={mode === "login" ? "authTab active" : "authTab"}
+                onClick={() => setMode("login")}
+                type="button"
+              >
+                Вход
+              </button>
+              <button
+                className={mode === "register" ? "authTab active" : "authTab"}
+                onClick={() => setMode("register")}
+                type="button"
+              >
+                Регистрация
+              </button>
+            </div>
 
-          <form className="authForm" onSubmit={handleSubmit}>
-            {mode === "register" && (
+            <form className="authForm" onSubmit={handleSubmit}>
+              {mode === "register" && (
+                <label>
+                  Username
+                  <input
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="k1epa"
+                    autoComplete="username"
+                  />
+                </label>
+              )}
+
               <label>
-                Username
+                Email
                 <input
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                  placeholder="k1epa"
-                  autoComplete="username"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="k1epa@example.com"
+                  type="email"
+                  autoComplete="email"
                 />
               </label>
-            )}
 
-            <label>
-              Email
-              <input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="k1epa@example.com"
-                type="email"
-                autoComplete="email"
-              />
-            </label>
+              <label>
+                Password
+                <input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type="password"
+                  placeholder="123456"
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                />
+              </label>
 
-            <label>
-              Password
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                placeholder="123456"
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-              />
-            </label>
+              <button className="submitButton" disabled={isLoading}>
+                {isLoading
+                  ? "Отправляем..."
+                  : mode === "login"
+                    ? "Войти"
+                    : "Создать аккаунт"}
+              </button>
+            </form>
 
-            <button className="submitButton" disabled={isLoading}>
-              {isLoading
-                ? "Отправляем..."
-                : mode === "login"
-                  ? "Войти"
-                  : "Создать аккаунт"}
-            </button>
-          </form>
-
-          <div className="statusBox">
-            <div>
-              <b>Статус:</b> {status}
+            <div className="statusBox">
+              <div>
+                <b>Статус:</b> {status}
+              </div>
+              {error && <div className="errorText">{error}</div>}
             </div>
-            {error && <div className="errorText">{error}</div>}
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="app">
-      <aside className="servers" aria-label="Серверы">
-        <div className="serverLogo">K</div>
+    <AppShell>
+      <div className="app">
+        <aside className="servers" aria-label="Серверы">
+          <div className="serverLogo">K</div>
 
-        <div className="serverRail">
-          {guilds.map((guild) => (
+          <div className="serverRail">
+            {guilds.map((guild) => (
+              <button
+                className={
+                  guild.id === activeGuildId ? "server active" : "server"
+                }
+                key={guild.id}
+                onClick={() => setActiveGuildId(guild.id)}
+                title={guild.name}
+                type="button"
+              >
+                {getInitial(guild.name)}
+              </button>
+            ))}
             <button
-              className={
-                guild.id === activeGuildId ? "server active" : "server"
-              }
-              key={guild.id}
-              onClick={() => setActiveGuildId(guild.id)}
-              title={guild.name}
+              className="server addServer"
+              disabled={isWorkspaceLoading}
+              onClick={() => openCreateModal("guild")}
+              title="Создать сервер"
               type="button"
             >
-              {getInitial(guild.name)}
+              +
             </button>
-          ))}
-          <button
-            className="server addServer"
-            disabled={isWorkspaceLoading}
-            onClick={() => openCreateModal("guild")}
-            title="Создать сервер"
-            type="button"
-          >
-            +
-          </button>
-        </div>
-      </aside>
-
-      <aside className="channels">
-        <div className="guildTitle">
-          <div>
-            <span>{activeGuild?.name || "Нет сервера"}</span>
-            <small>{isWorkspaceLoading ? "Синхронизация..." : status}</small>
           </div>
-        </div>
+        </aside>
 
-        <div className="channelScroll">
-          <div className="channelBlock">
-            <div className="channelCategoryRow">
-              <div className="channelCategory">Текстовые каналы</div>
-              <button
-                className="channelActionButton"
-                disabled={isWorkspaceLoading || !activeGuild}
-                onClick={() => openCreateModal("text")}
-                title="Создать текстовый канал"
-                type="button"
-              >
-                +
-              </button>
+        <aside className="channels">
+          <div className="guildTitle">
+            <div>
+              <span>{activeGuild?.name || "Нет сервера"}</span>
+              <small>{isWorkspaceLoading ? "Синхронизация..." : status}</small>
             </div>
+          </div>
 
-            {textChannels.map((channel) => (
-              <div className="channelRow" key={channel.id}>
+          <div className="channelScroll">
+            <div className="channelBlock">
+              <div className="channelCategoryRow">
+                <div className="channelCategory">Текстовые каналы</div>
                 <button
-                  className={
-                    channel.id === activeChannelId
-                      ? "channel active"
-                      : "channel"
-                  }
-                  onClick={() => setActiveChannelId(channel.id)}
+                  className="channelActionButton"
+                  disabled={isWorkspaceLoading || !activeGuild}
+                  onClick={() => openCreateModal("text")}
+                  title="Создать текстовый канал"
                   type="button"
                 >
-                  <span className="channelIcon">#</span>
-                  <span className="channelName">{channel.name}</span>
-                </button>
-                <button
-                  className="channelEditButton"
-                  disabled={isWorkspaceLoading}
-                  onClick={() => openRenameModal(channel)}
-                  title="Переименовать канал"
-                  type="button"
-                >
-                  ✎
-                </button>
-                <button
-                  className="channelDeleteButton"
-                  disabled={isWorkspaceLoading}
-                  onClick={() => handleDeleteChannel(channel.id)}
-                  title="Удалить канал"
-                  type="button"
-                >
-                  ×
+                  +
                 </button>
               </div>
-            ))}
 
-            {!textChannels.length && (
-              <div className="emptyHint">Пока нет текстовых каналов</div>
-            )}
-          </div>
+              {textChannels.map((channel) => (
+                <div className="channelRow" key={channel.id}>
+                  <button
+                    className={
+                      channel.id === activeChannelId
+                        ? "channel active"
+                        : "channel"
+                    }
+                    onClick={() => setActiveChannelId(channel.id)}
+                    type="button"
+                  >
+                    <span className="channelIcon">#</span>
+                    <span className="channelName">{channel.name}</span>
+                  </button>
+                  <button
+                    className="channelEditButton"
+                    disabled={isWorkspaceLoading}
+                    onClick={() => openRenameModal(channel)}
+                    title="Переименовать канал"
+                    type="button"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="channelDeleteButton"
+                    disabled={isWorkspaceLoading}
+                    onClick={() => handleDeleteChannel(channel.id)}
+                    title="Удалить канал"
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
 
-          <div className="channelBlock">
-            <div className="channelCategoryRow">
-              <div className="channelCategory">Голосовые каналы</div>
-              <button
-                className="channelActionButton"
-                disabled={isWorkspaceLoading || !activeGuild}
-                onClick={() => openCreateModal("voice")}
-                title="Создать голосовой канал"
-                type="button"
-              >
-                +
-              </button>
+              {!textChannels.length && (
+                <div className="emptyHint">Пока нет текстовых каналов</div>
+              )}
             </div>
 
-            {voiceChannels.map((channel) => {
-              const isCurrentVoiceChannel =
-                voice.currentChannelId === channel.id &&
-                voice.state !== "error";
-
-              const usersInChannel = isCurrentVoiceChannel
-                ? voice.voiceUsers
-                : [];
-
-              return (
-                <div className="voiceChannelTree" key={channel.id}>
-                  <div className="channelRow">
-                    <button
-                      className={
-                        channel.id === activeChannelId || isCurrentVoiceChannel
-                          ? "voiceChannelHeader active"
-                          : "voiceChannelHeader"
-                      }
-                      onClick={() => {
-                        setActiveChannelId(channel.id);
-
-                        if (!isCurrentVoiceChannel) {
-                          handleJoinVoiceChannel(channel);
-                        }
-                      }}
-                      type="button"
-                    >
-                      <span className="voiceChannelIcon">♪</span>
-                      <span className="voiceChannelName">{channel.name}</span>
-
-                      {isCurrentVoiceChannel && (
-                        <span className="voiceChannelState">Внутри</span>
-                      )}
-                    </button>
-                    <button
-                      className="channelEditButton"
-                      disabled={isWorkspaceLoading}
-                      onClick={() => openRenameModal(channel)}
-                      title="Переименовать канал"
-                      type="button"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="channelDeleteButton"
-                      disabled={isWorkspaceLoading}
-                      onClick={() => handleDeleteChannel(channel.id)}
-                      title="Удалить канал"
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  {usersInChannel.length > 0 && (
-                    <div className="voiceChannelMembers">
-                      {usersInChannel.map((voiceUser) => {
-                        const displayName = voiceUser.username || voiceUser.id;
-                        const settings = voiceUser.settings;
-                        const isSelf = voiceUser.id === user.id;
-                        const localVolume = voice.remoteVolumes[voiceUser.id] ?? 1;
-                        const localVolumePercent = Math.round(localVolume * 100);
-                        const memberClassName = [
-                          "voiceChannelMember",
-                          settings?.muted ? "muted" : "",
-                          isSelf ? "current" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ");
-
-                        return (
-                          <div
-                            className={memberClassName}
-                            key={voiceUser.id}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              setVoiceUserMenu(null);
-
-                              if (isSelf) {
-                                setIsSettingsOpen(true);
-                                return;
-                              }
-
-                              setVoiceUserMenu({
-                                userId: voiceUser.id,
-                                username: displayName,
-                                x: event.clientX,
-                                y: event.clientY,
-                              });
-                            }}
-                          >
-                            <div className="voiceChannelMemberAvatar">
-                              {displayName.slice(0, 1).toUpperCase()}
-                            </div>
-
-                            <div className="voiceChannelMemberName">
-                              {displayName}
-                            </div>
-
-                            <div className="voiceChannelMemberIcons">
-                              <span
-                                className={
-                                  settings?.muted
-                                    ? "voiceMemberBadge danger"
-                                    : "voiceMemberBadge"
-                                }
-                                title={
-                                  settings?.muted
-                                    ? "Микрофон выключен"
-                                    : "Микрофон включён"
-                                }
-                              >
-                                {settings?.muted ? "off" : "mic"}
-                              </span>
-                              {!isSelf && localVolumePercent !== 100 && (
-                                <span
-                                  className="voiceMemberBadge"
-                                  title="Локальная громкость"
-                                >
-                                  {localVolumePercent}%
-                                </span>
-                              )}
-                              {settings?.noiseSuppression && (
-                                <span
-                                  className="voiceMemberBadge"
-                                  title="Шумоподавление"
-                                >
-                                  NS
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {!voiceChannels.length && (
-              <div className="emptyHint emptyHintWithAction">
-                <span>Пока нет голосовых каналов</span>
+            <div className="channelBlock">
+              <div className="channelCategoryRow">
+                <div className="channelCategory">Голосовые каналы</div>
                 <button
-                  className="emptyActionButton"
+                  className="channelActionButton"
                   disabled={isWorkspaceLoading || !activeGuild}
                   onClick={() => openCreateModal("voice")}
+                  title="Создать голосовой канал"
                   type="button"
                 >
-                  Создать голосовой
+                  +
+                </button>
+              </div>
+
+              {voiceChannels.map((channel) => {
+                const isCurrentVoiceChannel =
+                  voice.currentChannelId === channel.id &&
+                  voice.state !== "error";
+
+                const usersInChannel = isCurrentVoiceChannel
+                  ? voice.voiceUsers
+                  : [];
+
+                return (
+                  <div className="voiceChannelTree" key={channel.id}>
+                    <div className="channelRow">
+                      <button
+                        className={
+                          channel.id === activeChannelId ||
+                          isCurrentVoiceChannel
+                            ? "voiceChannelHeader active"
+                            : "voiceChannelHeader"
+                        }
+                        onClick={() => {
+                          setActiveChannelId(channel.id);
+
+                          if (!isCurrentVoiceChannel) {
+                            handleJoinVoiceChannel(channel);
+                          }
+                        }}
+                        type="button"
+                      >
+                        <span className="voiceChannelIcon">♪</span>
+                        <span className="voiceChannelName">{channel.name}</span>
+
+                        {isCurrentVoiceChannel && (
+                          <span className="voiceChannelState">Внутри</span>
+                        )}
+                      </button>
+                      <button
+                        className="channelEditButton"
+                        disabled={isWorkspaceLoading}
+                        onClick={() => openRenameModal(channel)}
+                        title="Переименовать канал"
+                        type="button"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="channelDeleteButton"
+                        disabled={isWorkspaceLoading}
+                        onClick={() => handleDeleteChannel(channel.id)}
+                        title="Удалить канал"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {usersInChannel.length > 0 && (
+                      <div className="voiceChannelMembers">
+                        {usersInChannel.map((voiceUser) => {
+                          const displayName =
+                            voiceUser.username || voiceUser.id;
+                          const settings = voiceUser.settings;
+                          const isSelf = voiceUser.id === user.id;
+                          const localVolume =
+                            voice.remoteVolumes[voiceUser.id] ?? 1;
+                          const localVolumePercent = Math.round(
+                            localVolume * 100,
+                          );
+                          const memberClassName = [
+                            "voiceChannelMember",
+                            settings?.muted ? "muted" : "",
+                            isSelf ? "current" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ");
+
+                          return (
+                            <div
+                              className={memberClassName}
+                              key={voiceUser.id}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                setVoiceUserMenu(null);
+
+                                if (isSelf) {
+                                  setIsSettingsOpen(true);
+                                  return;
+                                }
+
+                                setVoiceUserMenu({
+                                  userId: voiceUser.id,
+                                  username: displayName,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                });
+                              }}
+                            >
+                              <div className="voiceChannelMemberAvatar">
+                                {displayName.slice(0, 1).toUpperCase()}
+                              </div>
+
+                              <div className="voiceChannelMemberName">
+                                {displayName}
+                              </div>
+
+                              <div className="voiceChannelMemberIcons">
+                                <span
+                                  className={
+                                    settings?.muted
+                                      ? "voiceMemberBadge danger"
+                                      : "voiceMemberBadge"
+                                  }
+                                  title={
+                                    settings?.muted
+                                      ? "Микрофон выключен"
+                                      : "Микрофон включён"
+                                  }
+                                >
+                                  {settings?.muted ? "off" : "mic"}
+                                </span>
+                                {!isSelf && localVolumePercent !== 100 && (
+                                  <span
+                                    className="voiceMemberBadge"
+                                    title="Локальная громкость"
+                                  >
+                                    {localVolumePercent}%
+                                  </span>
+                                )}
+                                {settings?.noiseSuppression && (
+                                  <span
+                                    className="voiceMemberBadge"
+                                    title="Шумоподавление"
+                                  >
+                                    NS
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {!voiceChannels.length && (
+                <div className="emptyHint emptyHintWithAction">
+                  <span>Пока нет голосовых каналов</span>
+                  <button
+                    className="emptyActionButton"
+                    disabled={isWorkspaceLoading || !activeGuild}
+                    onClick={() => openCreateModal("voice")}
+                    type="button"
+                  >
+                    Создать голосовой
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="profilePanel">
+            <div className="profileAvatar">{getInitial(user.username)}</div>
+            <div className="profileInfo">
+              <div className="profileName">{user.username}</div>
+              <div className="profileStatus online">online</div>
+            </div>
+            <button
+              className="profileSettings"
+              onClick={() => setIsSettingsOpen(true)}
+              title="Настройки"
+              type="button"
+            >
+              ⚙
+            </button>
+            <button
+              className="profileLogout"
+              onClick={logout}
+              title="Выйти"
+              type="button"
+            >
+              ⏻
+            </button>
+          </div>
+        </aside>
+
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <strong>
+                {activeChannel?.type === "voice" ? "♪" : "#"}{" "}
+                {activeChannel?.name || "канал не выбран"}
+              </strong>
+              <span>
+                {activeGuild
+                  ? `Сервер ${activeGuild.name}`
+                  : "Создайте сервер, чтобы начать общение"}
+              </span>
+            </div>
+          </header>
+
+          <section className="chat">
+            {!activeGuild && (
+              <div className="emptyState">
+                <h2>Создайте первый сервер</h2>
+                <p>
+                  После этого можно будет добавить каналы и начать переписку.
+                </p>
+              </div>
+            )}
+
+            {activeGuild && !activeChannel && (
+              <div className="emptyState">
+                <h2>Добавьте канал</h2>
+                <p>
+                  Текстовый канал нужен для сообщений, голосовой можно оставить
+                  как комнату.
+                </p>
+              </div>
+            )}
+
+            {activeChannel?.type === "voice" && (
+              <div className="voiceRoom">
+                <div className="pulse">♪</div>
+                <h2>{activeChannel.name}</h2>
+                <p>
+                  Голосовая комната готова. Текстовые сообщения доступны в
+                  каналах с #.
+                </p>
+                <button
+                  className="voiceRoomJoinButton"
+                  disabled={
+                    isActiveVoiceChannelJoined && voice.state !== "error"
+                  }
+                  onClick={() => handleJoinVoiceChannel(activeChannel)}
+                  type="button"
+                >
+                  {isActiveVoiceConnecting
+                    ? "Подключаемся..."
+                    : isActiveVoiceChannelJoined && voice.state !== "error"
+                      ? "Вы в канале"
+                      : "Войти в голос"}
                 </button>
               </div>
             )}
-          </div>
-        </div>
 
-        <div className="profilePanel">
-          <div className="profileAvatar">{getInitial(user.username)}</div>
-          <div className="profileInfo">
-            <div className="profileName">{user.username}</div>
-            <div className="profileStatus online">online</div>
-          </div>
-          <button
-            className="profileSettings"
-            onClick={() => setIsSettingsOpen(true)}
-            title="Настройки"
-            type="button"
-          >
-            ⚙
-          </button>
-          <button
-            className="profileLogout"
-            onClick={logout}
-            title="Выйти"
-            type="button"
-          >
-            ⏻
-          </button>
-        </div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <strong>
-              {activeChannel?.type === "voice" ? "♪" : "#"}{" "}
-              {activeChannel?.name || "канал не выбран"}
-            </strong>
-            <span>
-              {activeGuild
-                ? `Сервер ${activeGuild.name}`
-                : "Создайте сервер, чтобы начать общение"}
-            </span>
-          </div>
-        </header>
-
-        <section className="chat">
-          {!activeGuild && (
-            <div className="emptyState">
-              <h2>Создайте первый сервер</h2>
-              <p>После этого можно будет добавить каналы и начать переписку.</p>
-            </div>
-          )}
-
-          {activeGuild && !activeChannel && (
-            <div className="emptyState">
-              <h2>Добавьте канал</h2>
-              <p>
-                Текстовый канал нужен для сообщений, голосовой можно оставить
-                как комнату.
-              </p>
-            </div>
-          )}
-
-          {activeChannel?.type === "voice" && (
-            <div className="voiceRoom">
-              <div className="pulse">♪</div>
-              <h2>{activeChannel.name}</h2>
-              <p>
-                Голосовая комната готова. Текстовые сообщения доступны в каналах
-                с #.
-              </p>
-              <button
-                className="voiceRoomJoinButton"
-                disabled={isActiveVoiceChannelJoined && voice.state !== "error"}
-                onClick={() => handleJoinVoiceChannel(activeChannel)}
-                type="button"
-              >
-                {isActiveVoiceConnecting
-                  ? "Подключаемся..."
-                  : isActiveVoiceChannelJoined && voice.state !== "error"
-                    ? "Вы в канале"
-                    : "Войти в голос"}
-              </button>
-            </div>
-          )}
-
-          {activeChannel?.type === "voice" && isActiveVoiceChannelJoined && (
-            <ScreenShareStage
-              isLocalSharing={voice.isScreenSharing}
-              screenShares={voice.screenShares}
-              onStopLocalShare={voice.stopScreenShare}
-            />
-          )}
-
-          {activeChannel?.type === "text" && isMessagesLoading && (
-            <div className="emptyHint">Загружаем сообщения...</div>
-          )}
-
-          {activeChannel?.type === "text" &&
-            !isMessagesLoading &&
-            !messages.length && (
-              <div className="emptyState">
-                <h2>Тут пока тихо</h2>
-                <p>Напишите первое сообщение в #{activeChannel.name}.</p>
-              </div>
+            {activeChannel?.type === "voice" && isActiveVoiceChannelJoined && (
+              <ScreenShareStage
+                isLocalSharing={voice.isScreenSharing}
+                screenShares={voice.screenShares}
+                onStopLocalShare={voice.stopScreenShare}
+              />
             )}
 
-          {activeChannel?.type === "text" &&
-            messages.map((message) => {
-              const isOwn = message.author_id === user.id;
-              const authorName = isOwn
-                ? user.username
-                : `user-${message.author_id.slice(0, 6)}`;
+            {activeChannel?.type === "text" && isMessagesLoading && (
+              <div className="emptyHint">Загружаем сообщения...</div>
+            )}
 
-              return (
-                <article
-                  className={isOwn ? "message ownMessage" : "message"}
-                  key={message.id}
-                >
-                  <div className="avatar">{getInitial(authorName)}</div>
-                  <div className="messageBody">
-                    <div className="messageMeta">
-                      <span className="author">{authorName}</span>
-                      <time>{formatTime(message.created_at)}</time>
+            {activeChannel?.type === "text" &&
+              !isMessagesLoading &&
+              !messages.length && (
+                <div className="emptyState">
+                  <h2>Тут пока тихо</h2>
+                  <p>Напишите первое сообщение в #{activeChannel.name}.</p>
+                </div>
+              )}
+
+            {activeChannel?.type === "text" &&
+              messages.map((message) => {
+                const isOwn = message.author_id === user.id;
+                const authorName = isOwn
+                  ? user.username
+                  : `user-${message.author_id.slice(0, 6)}`;
+
+                return (
+                  <article
+                    className={isOwn ? "message ownMessage" : "message"}
+                    key={message.id}
+                  >
+                    <div className="avatar">{getInitial(authorName)}</div>
+                    <div className="messageBody">
+                      <div className="messageMeta">
+                        <span className="author">{authorName}</span>
+                        <time>{formatTime(message.created_at)}</time>
+                      </div>
+                      <p>{message.content}</p>
                     </div>
-                    <p>{message.content}</p>
-                  </div>
-                </article>
-              );
-            })}
-        </section>
+                  </article>
+                );
+              })}
+          </section>
 
-        {error && <div className="inlineError">{error}</div>}
+          {error && <div className="inlineError">{error}</div>}
 
-        <form className="messageInput" onSubmit={handleSendMessage}>
-          <input
-            disabled={
-              !activeChannel || activeChannel.type !== "text" || isSending
-            }
-            value={messageDraft}
-            onChange={(event) => setMessageDraft(event.target.value)}
-            placeholder={
-              activeChannel?.type === "text"
-                ? `Написать сообщение в #${activeChannel.name}`
-                : "Выберите текстовый канал"
-            }
-          />
-          <button
-            disabled={
-              !activeChannel ||
-              activeChannel.type !== "text" ||
-              !messageDraft.trim() ||
-              isSending
-            }
-          >
-            Отправить
-          </button>
-        </form>
-      </main>
+          <form className="messageInput" onSubmit={handleSendMessage}>
+            <input
+              disabled={
+                !activeChannel || activeChannel.type !== "text" || isSending
+              }
+              value={messageDraft}
+              onChange={(event) => setMessageDraft(event.target.value)}
+              placeholder={
+                activeChannel?.type === "text"
+                  ? `Написать сообщение в #${activeChannel.name}`
+                  : "Выберите текстовый канал"
+              }
+            />
+            <button
+              disabled={
+                !activeChannel ||
+                activeChannel.type !== "text" ||
+                !messageDraft.trim() ||
+                isSending
+              }
+            >
+              Отправить
+            </button>
+          </form>
+        </main>
 
-      <aside className="members">
-        <div className="accountPanel">
-          <div className="bigAvatar">{getInitial(user.username)}</div>
-          <div className="accountName">{user.username}</div>
-          <div className="accountEmail">{user.email}</div>
-        </div>
+        <aside className="members">
+          <div className="accountPanel">
+            <div className="bigAvatar">{getInitial(user.username)}</div>
+            <div className="accountName">{user.username}</div>
+            <div className="accountEmail">{user.email}</div>
+          </div>
 
-        {activeGuild && (
+          {activeGuild && (
+            <div className="membersPanel">
+              <div className="membersTitle">Пригласить в сервер</div>
+              <form className="inviteForm" onSubmit={handleInviteMember}>
+                <input
+                  disabled={isInviteSending}
+                  value={inviteUsername}
+                  onChange={(event) => setInviteUsername(event.target.value)}
+                  placeholder="Никнейм"
+                  autoComplete="off"
+                />
+                <button
+                  disabled={isInviteSending || !inviteUsername.trim()}
+                  type="submit"
+                >
+                  {isInviteSending ? "Отправляем..." : "Пригласить"}
+                </button>
+              </form>
+            </div>
+          )}
+
           <div className="membersPanel">
-            <div className="membersTitle">Пригласить в сервер</div>
-            <form className="inviteForm" onSubmit={handleInviteMember}>
-              <input
-                disabled={isInviteSending}
-                value={inviteUsername}
-                onChange={(event) => setInviteUsername(event.target.value)}
-                placeholder="Никнейм"
-                autoComplete="off"
-              />
+            <div className="membersTitle">
+              Пользователи сервера <span>{guildMembers.length}</span>
+            </div>
+
+            {!activeGuild && <div className="emptyHint">Выберите сервер</div>}
+
+            {activeGuild && isMembersLoading && (
+              <div className="emptyHint">Загружаем участников...</div>
+            )}
+
+            {activeGuild && !isMembersLoading && !guildMembers.length && (
+              <div className="emptyHint">Пока нет участников</div>
+            )}
+
+            {activeGuild &&
+              !isMembersLoading &&
+              guildMembers.map((member) => (
+                <div
+                  className={
+                    member.id === user.id ? "member current" : "member"
+                  }
+                  key={member.id}
+                >
+                  <div className="memberAvatar">
+                    {getInitial(member.username)}
+                  </div>
+                  <div className="memberInfo">
+                    <div className="memberName">{member.username}</div>
+                  </div>
+                  <span className={`memberRole ${member.role}`}>
+                    {getRoleLabel(member.role)}
+                  </span>
+                </div>
+              ))}
+          </div>
+
+          <div className="membersPanel">
+            <div className="membersTitle">Сводка</div>
+            <div className="statRow">
+              <span>Серверы</span>
+              <b>{guilds.length}</b>
+            </div>
+            <div className="statRow">
+              <span>Каналы</span>
+              <b>{channels.length}</b>
+            </div>
+            <div className="statRow">
+              <span>Пользователи</span>
+              <b>{activeGuild ? guildMembers.length : 0}</b>
+            </div>
+          </div>
+        </aside>
+
+        {pendingInvitation && (
+          <div className="inviteToast" role="status">
+            <div className="inviteToastBody">
+              <strong>Приглашение на сервер</strong>
+              <span>
+                {pendingInvitation.inviter_username} приглашает в{" "}
+                {pendingInvitation.guild_name}
+              </span>
+              {invitations.length > 1 && (
+                <small>Ещё приглашений: {invitations.length - 1}</small>
+              )}
+            </div>
+            <div className="inviteToastActions">
               <button
-                disabled={isInviteSending || !inviteUsername.trim()}
-                type="submit"
+                disabled={isInvitationUpdating}
+                onClick={() => handleDeclineInvitation(pendingInvitation.id)}
+                type="button"
               >
-                {isInviteSending ? "Отправляем..." : "Пригласить"}
+                Отклонить
               </button>
-            </form>
+              <button
+                disabled={isInvitationUpdating}
+                onClick={() => handleAcceptInvitation(pendingInvitation.id)}
+                type="button"
+              >
+                Принять
+              </button>
+            </div>
           </div>
         )}
 
-        <div className="membersPanel">
-          <div className="membersTitle">
-            Пользователи сервера <span>{guildMembers.length}</span>
-          </div>
+        {createModalType && (
+          <div className="modalBackdrop">
+            <section className="createModal" aria-modal="true" role="dialog">
+              <div className="createModalHeader">
+                <div className="createModalIcon">{createModalIcon}</div>
+                <div>
+                  <h2>{createModalTitle}</h2>
+                </div>
+              </div>
 
-          {!activeGuild && <div className="emptyHint">Выберите сервер</div>}
-
-          {activeGuild && isMembersLoading && (
-            <div className="emptyHint">Загружаем участников...</div>
-          )}
-
-          {activeGuild && !isMembersLoading && !guildMembers.length && (
-            <div className="emptyHint">Пока нет участников</div>
-          )}
-
-          {activeGuild &&
-            !isMembersLoading &&
-            guildMembers.map((member) => (
-              <div
-                className={
-                  member.id === user.id ? "member current" : "member"
-                }
-                key={member.id}
+              <form
+                className="createModalForm"
+                onSubmit={handleCreateFromModal}
               >
-                <div className="memberAvatar">
-                  {getInitial(member.username)}
+                <input
+                  autoFocus
+                  value={createName}
+                  onChange={(event) => setCreateName(event.target.value)}
+                  placeholder={createPlaceholder}
+                />
+
+                <div className="createModalActions">
+                  <button
+                    className="createModalSecondary"
+                    disabled={isWorkspaceLoading}
+                    onClick={closeCreateModal}
+                    type="button"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="createModalPrimary"
+                    disabled={isWorkspaceLoading || !createName.trim()}
+                    type="submit"
+                  >
+                    Создать
+                  </button>
                 </div>
-                <div className="memberInfo">
-                  <div className="memberName">{member.username}</div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        {renameDraft && (
+          <div className="modalBackdrop">
+            <section className="createModal" aria-modal="true" role="dialog">
+              <div className="createModalHeader">
+                <div className="createModalIcon">✎</div>
+                <div>
+                  <h2>Переименовать канал</h2>
                 </div>
-                <span className={`memberRole ${member.role}`}>
-                  {getRoleLabel(member.role)}
-                </span>
               </div>
-            ))}
-        </div>
 
-        <div className="membersPanel">
-          <div className="membersTitle">Сводка</div>
-          <div className="statRow">
-            <span>Серверы</span>
-            <b>{guilds.length}</b>
-          </div>
-          <div className="statRow">
-            <span>Каналы</span>
-            <b>{channels.length}</b>
-          </div>
-          <div className="statRow">
-            <span>Пользователи</span>
-            <b>{activeGuild ? guildMembers.length : 0}</b>
-          </div>
-        </div>
-      </aside>
+              <form className="createModalForm" onSubmit={handleRenameChannel}>
+                <input
+                  autoFocus
+                  value={renameDraft.name}
+                  onChange={(event) =>
+                    setRenameDraft((draft) =>
+                      draft
+                        ? {
+                            ...draft,
+                            name: event.target.value,
+                          }
+                        : draft,
+                    )
+                  }
+                  placeholder="Название канала"
+                />
 
-      {pendingInvitation && (
-        <div className="inviteToast" role="status">
-          <div className="inviteToastBody">
-            <strong>Приглашение на сервер</strong>
-            <span>
-              {pendingInvitation.inviter_username} приглашает в{" "}
-              {pendingInvitation.guild_name}
-            </span>
-            {invitations.length > 1 && (
-              <small>Ещё приглашений: {invitations.length - 1}</small>
-            )}
+                <div className="createModalActions">
+                  <button
+                    className="createModalSecondary"
+                    disabled={isWorkspaceLoading}
+                    onClick={closeRenameModal}
+                    type="button"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="createModalPrimary"
+                    disabled={isWorkspaceLoading || !renameDraft.name.trim()}
+                    type="submit"
+                  >
+                    Сохранить
+                  </button>
+                </div>
+              </form>
+            </section>
           </div>
-          <div className="inviteToastActions">
-            <button
-              disabled={isInvitationUpdating}
-              onClick={() => handleDeclineInvitation(pendingInvitation.id)}
-              type="button"
-            >
-              Отклонить
-            </button>
-            <button
-              disabled={isInvitationUpdating}
-              onClick={() => handleAcceptInvitation(pendingInvitation.id)}
-              type="button"
-            >
-              Принять
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {createModalType && (
-        <div className="modalBackdrop">
-          <section className="createModal" aria-modal="true" role="dialog">
-            <div className="createModalHeader">
-              <div className="createModalIcon">{createModalIcon}</div>
-              <div>
-                <h2>{createModalTitle}</h2>
-              </div>
+        {isSettingsOpen && (
+          <AppSettingsModal
+            voiceSettings={voice.voiceSettings}
+            isConnected={voice.state === "connected"}
+            onClose={() => setIsSettingsOpen(false)}
+            onToggleMute={voice.toggleMute}
+            onUpdateVoiceSettings={voice.updateVoiceSettings}
+          />
+        )}
+
+        {isScreenSharePickerOpen && (
+          <ScreenSharePicker
+            onClose={() => setIsScreenSharePickerOpen(false)}
+            onStart={handleStartScreenShare}
+          />
+        )}
+
+        {voiceUserMenu && (
+          <div
+            className="voiceUserMenu"
+            style={voiceUserMenuStyle}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="voiceUserMenuTitle">
+              <span>{voiceUserMenu.username}</span>
+              <b>{Math.round(voiceUserMenuVolume * 100)}%</b>
             </div>
 
-            <form className="createModalForm" onSubmit={handleCreateFromModal}>
+            <label className="voiceUserMenuSlider">
+              <span>Громкость</span>
               <input
-                autoFocus
-                value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
-                placeholder={createPlaceholder}
-              />
-
-              <div className="createModalActions">
-                <button
-                  className="createModalSecondary"
-                  disabled={isWorkspaceLoading}
-                  onClick={closeCreateModal}
-                  type="button"
-                >
-                  Отмена
-                </button>
-                <button
-                  className="createModalPrimary"
-                  disabled={isWorkspaceLoading || !createName.trim()}
-                  type="submit"
-                >
-                  Создать
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {renameDraft && (
-        <div className="modalBackdrop">
-          <section className="createModal" aria-modal="true" role="dialog">
-            <div className="createModalHeader">
-              <div className="createModalIcon">✎</div>
-              <div>
-                <h2>Переименовать канал</h2>
-              </div>
-            </div>
-
-            <form className="createModalForm" onSubmit={handleRenameChannel}>
-              <input
-                autoFocus
-                value={renameDraft.name}
+                max="2"
+                min="0"
                 onChange={(event) =>
-                  setRenameDraft((draft) =>
-                    draft
-                      ? {
-                          ...draft,
-                          name: event.target.value,
-                        }
-                      : draft,
+                  voice.updateRemoteVolume(
+                    voiceUserMenu.userId,
+                    Number(event.target.value),
                   )
                 }
-                placeholder="Название канала"
+                step="0.05"
+                type="range"
+                value={voiceUserMenuVolume}
               />
+            </label>
 
-              <div className="createModalActions">
-                <button
-                  className="createModalSecondary"
-                  disabled={isWorkspaceLoading}
-                  onClick={closeRenameModal}
-                  type="button"
-                >
-                  Отмена
-                </button>
-                <button
-                  className="createModalPrimary"
-                  disabled={isWorkspaceLoading || !renameDraft.name.trim()}
-                  type="submit"
-                >
-                  Сохранить
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {isSettingsOpen && (
-        <AppSettingsModal
-          voiceSettings={voice.voiceSettings}
-          isConnected={voice.state === "connected"}
-          onClose={() => setIsSettingsOpen(false)}
-          onToggleMute={voice.toggleMute}
-          onUpdateVoiceSettings={voice.updateVoiceSettings}
-        />
-      )}
-
-      {isScreenSharePickerOpen && (
-        <ScreenSharePicker
-          onClose={() => setIsScreenSharePickerOpen(false)}
-          onStart={handleStartScreenShare}
-        />
-      )}
-
-      {voiceUserMenu && (
-        <div
-          className="voiceUserMenu"
-          style={voiceUserMenuStyle}
-          onClick={(event) => event.stopPropagation()}
-          onContextMenu={(event) => event.preventDefault()}
-        >
-          <div className="voiceUserMenuTitle">
-            <span>{voiceUserMenu.username}</span>
-            <b>{Math.round(voiceUserMenuVolume * 100)}%</b>
+            <button
+              className="voiceUserMenuReset"
+              onClick={() => voice.updateRemoteVolume(voiceUserMenu.userId, 1)}
+              type="button"
+            >
+              Сбросить на 100%
+            </button>
           </div>
+        )}
 
-          <label className="voiceUserMenuSlider">
-            <span>Громкость</span>
-            <input
-              max="2"
-              min="0"
-              onChange={(event) =>
-                voice.updateRemoteVolume(
-                  voiceUserMenu.userId,
-                  Number(event.target.value),
-                )
-              }
-              step="0.05"
-              type="range"
-              value={voiceUserMenuVolume}
-            />
-          </label>
-
-          <button
-            className="voiceUserMenuReset"
-            onClick={() => voice.updateRemoteVolume(voiceUserMenu.userId, 1)}
-            type="button"
-          >
-            Сбросить на 100%
-          </button>
-        </div>
-      )}
-
-      <VoicePanel
-        state={voice.state}
-        error={voice.error}
-        muted={voice.muted}
-        voiceSettings={voice.voiceSettings}
-        channelName={voice.currentChannelName}
-        remoteStreams={voice.remoteStreams}
-        remoteVolumes={voice.remoteVolumes}
-        isScreenSharing={voice.isScreenSharing}
-        onToggleMute={voice.toggleMute}
-        onToggleScreenShare={handleScreenShareAction}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onLeave={voice.leaveVoice}
-      />
-    </div>
+        <VoicePanel
+          state={voice.state}
+          error={voice.error}
+          muted={voice.muted}
+          voiceSettings={voice.voiceSettings}
+          channelName={voice.currentChannelName}
+          remoteStreams={voice.remoteStreams}
+          remoteVolumes={voice.remoteVolumes}
+          isScreenSharing={voice.isScreenSharing}
+          onToggleMute={voice.toggleMute}
+          onToggleScreenShare={handleScreenShareAction}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onLeave={voice.leaveVoice}
+        />
+      </div>
+    </AppShell>
   );
 }
 

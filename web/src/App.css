@@ -2,6 +2,16 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #111214;
+}
+
 body {
   margin: 0;
   background: #1f2024;
@@ -13,6 +23,12 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+  user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
 }
 
 button,
@@ -33,7 +49,8 @@ input:disabled {
 
 .loadingPage,
 .authPage {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 32px;
@@ -195,10 +212,30 @@ input:disabled {
 }
 
 .app {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 72px 286px minmax(0, 1fr) 272px;
+  overflow: hidden;
   background: #313338;
+}
+
+.servers,
+.channels,
+.members {
+  min-height: 0;
+}
+
+.servers {
+  overflow: hidden;
+}
+
+.serverRail,
+.channelScroll,
+.chat,
+.members {
+  min-height: 0;
+  overflow: auto;
 }
 
 .servers {
@@ -472,9 +509,11 @@ input:disabled {
 
 .main {
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -964,15 +1003,11 @@ input:disabled {
   .members {
     display: none;
   }
-
-  .voice-panel {
-    left: 356px;
-    right: 24px;
-  }
 }
 
 @media (max-width: 860px) {
   .authPage {
+    height: 100%;
     grid-template-columns: 1fr;
     gap: 28px;
     place-items: stretch;
@@ -1067,23 +1102,23 @@ input:disabled {
   position: fixed;
   left: 382px;
   right: 296px;
-  bottom: 24px;
+  bottom: 18px;
   z-index: 50;
 
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px 16px;
-  align-items: start;
+  align-items: center;
+  gap: 12px;
 
-  padding: 14px 16px;
-  border: 1px solid #2f3136;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
 
-  background: #1e1f22;
+  background: rgba(30, 31, 34, 0.94);
   color: #ffffff;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
 }
-
 .voice-panel__info {
   min-width: 0;
   display: flex;
@@ -1868,18 +1903,51 @@ input:focus-visible {
   color: #ff9b9b;
 }
 
+.user-context-menu,
 .voiceUserMenu {
   position: fixed;
-  z-index: 120;
-  width: 278px;
-  display: grid;
-  gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 12px;
-  background: #1e1f22;
-  color: #f4f5f7;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+  z-index: 10000;
+  width: 292px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: #f2f3f5;
+}
+
+.user-context-menu button,
+.user-context-menu__checkbox {
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #f2f3f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.user-context-menu button:hover,
+.user-context-menu__checkbox:hover {
+  background: #3f4248;
+}
+
+.user-context-menu__separator {
+  height: 1px;
+  margin: 8px;
+  background: #3f4147;
+}
+
+.user-context-menu__danger,
+.user-context-menu__danger span {
+  color: #f23f42;
 }
 
 .voiceUserMenuTitle {
@@ -2123,7 +2191,7 @@ input:focus-visible {
 }
 
 .screenPicker {
-  width: min(980px, calc(100vw - 56px));
+  width: min(1080px, calc(100vw - 56px));
   max-height: min(720px, calc(100vh - 56px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -2170,8 +2238,8 @@ input:focus-visible {
 .screenPickerBody {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(390px, 430px);
+  gap: 18px;
   overflow: auto;
   padding: 16px;
 }
@@ -2238,12 +2306,12 @@ input:focus-visible {
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: 16px;
+  gap: 18px;
 }
 
 .screenPickerSettings section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .screenPickerSettings h3 {
@@ -2256,18 +2324,25 @@ input:focus-visible {
 .screenSettingRow {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(0, auto);
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  gap: 7px;
   color: #ffffff;
   font-size: 13px;
   font-weight: 900;
 }
 
+.screenSettingRow > span {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 .screenSettingRow input[type="checkbox"] {
-  width: 42px;
+  width: 22px;
   height: 22px;
-  justify-self: end;
+  justify-self: start;
   accent-color: #23a55a;
 }
 
@@ -2275,8 +2350,10 @@ input:focus-visible {
 .stepperControl {
   min-width: 0;
   display: flex;
-  justify-content: flex-end;
-  border-radius: 999px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 4px;
+  border-radius: 8px;
   padding: 3px;
   background: #202838;
 }
@@ -2284,12 +2361,20 @@ input:focus-visible {
 .segmentedControl button,
 .stepperControl button {
   min-height: 28px;
+  min-width: 42px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 0 10px;
   background: transparent;
   color: #ffffff;
+  font-size: 12px;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.segmentedControl button:last-child:nth-child(6),
+.segmentedControl button:last-child:nth-child(7) {
+  min-width: 82px;
 }
 
 .segmentedControl.compact button {
@@ -2301,7 +2386,9 @@ input:focus-visible {
 }
 
 .stepperControl {
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: space-between;
   gap: 5px;
 }
 
@@ -2316,8 +2403,9 @@ input:focus-visible {
 }
 
 .stepperControl b {
-  min-width: 92px;
+  min-width: 110px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .screenPickerFooter {
@@ -2359,6 +2447,18 @@ input:focus-visible {
     left: 356px;
     right: 24px;
   }
+
+  .screenPicker {
+    width: min(960px, calc(100vw - 40px));
+  }
+
+  .screenPickerBody {
+    grid-template-columns: 1fr;
+  }
+
+  .screenPickerSources {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -2389,6 +2489,39 @@ input:focus-visible {
   .settingsToggles {
     grid-template-columns: 1fr;
   }
+
+  .screenPickerBackdrop {
+    padding: 12px;
+  }
+
+  .screenPicker {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+
+  .screenPickerTabs,
+  .screenPickerSources {
+    grid-template-columns: 1fr;
+  }
+
+  .screenSettingRow {
+    grid-template-columns: 1fr;
+  }
+
+  .segmentedControl,
+  .stepperControl {
+    justify-content: flex-start;
+  }
+
+  .screenPickerFooter {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .screenPickerStart {
+    width: 100%;
+    min-width: 0;
+  }
 }
 .voice-room {
   position: fixed;
@@ -2413,4 +2546,68 @@ input:focus-visible {
 .voice-room__bar {
   display: flex;
   justify-content: center;
+}
+
+
+.desktop-app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #111214;
+  color: #f2f3f5;
+  display: flex;
+  flex-direction: column;
+}
+
+.desktop-app__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.desktop-titlebar {
+  height: 32px;
+  flex: 0 0 32px;
+  background: #1e1f22;
+  border-bottom: 1px solid #2b2d31;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.desktop-titlebar__drag {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+}
+
+.desktop-titlebar__logo {
+  font-size: 13px;
+  font-weight: 700;
+  color: #dbdee1;
+}
+
+.desktop-titlebar__controls {
+  height: 100%;
+  display: flex;
+}
+
+.desktop-titlebar__controls button {
+  width: 46px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #dbdee1;
+  cursor: pointer;
+}
+
+.desktop-titlebar__controls button:hover {
+  background: #2b2d31;
+}
+
+.desktop-titlebar__close:hover {
+  background: #da373c !important;
+  color: white;
 }
