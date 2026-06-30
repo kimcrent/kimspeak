@@ -247,9 +247,9 @@ function App() {
   const voice = useVoiceRoom();
 
   const [mode, setMode] = useState<AuthMode>("login");
-  const [username, setUsername] = useState("k1epa");
-  const [email, setEmail] = useState("k1epa@example.com");
-  const [password, setPassword] = useState("123456");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const [token, setToken] = useState(
     () => localStorage.getItem(TOKEN_KEY) || "",
