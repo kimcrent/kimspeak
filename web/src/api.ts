@@ -392,10 +392,13 @@ export async function listMessages(token: string, channelId: string): Promise<Me
   return data.messages || [];
 }
 
+export type VoiceClientType = "app" | "screen";
+
 export async function createVoiceToken(
   token: string,
   guildId: string,
   channelId: string,
+  client: VoiceClientType = "app",
 ): Promise<VoiceTokenResponse> {
   return request<VoiceTokenResponse>(
     "/voice/token",
@@ -404,6 +407,7 @@ export async function createVoiceToken(
       body: JSON.stringify({
         guild_id: guildId,
         channel_id: channelId,
+        client,
       }),
     },
     token,

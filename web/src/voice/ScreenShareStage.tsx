@@ -12,11 +12,13 @@ export function ScreenShareStage({
   screenShares,
   onStopLocalShare,
 }: ScreenShareStageProps) {
-  const stageRefs = useRef(new Map<string, HTMLDivElement>());
+  const tileRefs = useRef(new Map<string, HTMLElement>());
+  const videoHostRefs = useRef(new Map<string, HTMLDivElement>());
+  const [selectedShareId, setSelectedShareId] = useState("");
   const [fullscreenShareId, setFullscreenShareId] = useState("");
 
   const requestFullscreen = async (shareId: string) => {
-    const node = stageRefs.current.get(shareId);
+    const node = tileRefs.current.get(shareId);
 
     if (!node) {
       return;
@@ -36,15 +38,16 @@ export function ScreenShareStage({
   useEffect(() => {
     const activeIds = new Set(screenShares.map((share) => share.id));
 
-    stageRefs.current.forEach((node, id) => {
+    videoHostRefs.current.forEach((node, id) => {
       if (!activeIds.has(id)) {
         node.replaceChildren();
-        stageRefs.current.delete(id);
+        videoHostRefs.current.delete(id);
+        tileRefs.current.delete(id);
       }
     });
 
     screenShares.forEach((share) => {
-      const node = stageRefs.current.get(share.id);
+      const node = videoHostRefs.current.get(share.id);
 
       if (!node) {
         return;
@@ -72,6 +75,19 @@ export function ScreenShareStage({
     return null;
   }
 
+  const hasSelectedShare = screenShares.some(
+    (share) => share.id === selectedShareId,
+  );
+  const activeShareId = hasSelectedShare
+    ? selectedShareId
+    : screenShares[0]?.id || "";
+  const orderedShares = activeShareId
+    ? [
+        ...screenShares.filter((share) => share.id === activeShareId),
+        ...screenShares.filter((share) => share.id !== activeShareId),
+      ]
+    : screenShares;
+
   return (
     <section className="screenShareStage" aria-label="Демонстрация экрана">
       <header className="screenShareStageHeader">
@@ -92,35 +108,66 @@ export function ScreenShareStage({
       </header>
 
       {screenShares.length > 0 ? (
-        <div className="screenShareGrid">
-          {screenShares.map((share) => (
-            <article
-              className={
-                fullscreenShareId === share.id
-                  ? "screenShareTile fullscreen"
-                  : "screenShareTile"
-              }
-              key={share.id}
-            >
-              <div
-                className="screenShareVideo"
-                ref={(node) => {
-                  if (node) {
-                    stageRefs.current.set(share.id, node);
+        <div
+          className={
+            screenShares.length === 1
+              ? "screenShareGrid single"
+              : "screenShareGrid multi"
+          }
+        >
+          {orderedShares.map((share) => {
+            const isSelected = share.id === activeShareId;
+
+            return (
+              <article
+                className={
+                  fullscreenShareId === share.id
+                    ? "screenShareTile fullscreen"
+                    : isSelected
+                      ? "screenShareTile selected"
+                      : "screenShareTile"
+                }
+                key={share.id}
+                onClick={() => setSelectedShareId(share.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedShareId(share.id);
                   }
                 }}
-              />
-              <div className="screenShareCaption">
-                <span>{share.username || share.userId}</span>
-                <button
-                  onClick={() => requestFullscreen(share.id)}
-                  type="button"
-                >
-                  Во весь экран
-                </button>
-              </div>
-            </article>
-          ))}
+                ref={(node) => {
+                  if (node) {
+                    tileRefs.current.set(share.id, node);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                title="Выбрать трансляцию"
+              >
+                <div
+                  className="screenShareVideo"
+                  ref={(node) => {
+                    if (node) {
+                      videoHostRefs.current.set(share.id, node);
+                    }
+                  }}
+                />
+                <div className="screenShareCaption">
+                  <span>{share.username || share.userId}</span>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedShareId(share.id);
+                      requestFullscreen(share.id);
+                    }}
+                    type="button"
+                  >
+                    Во весь экран
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="screenShareLocalNotice">

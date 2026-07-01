@@ -24,6 +24,8 @@ export type ScreenShareSourceType = "application" | "screen" | "device";
 
 export type ScreenShareSettings = {
   sourceType: ScreenShareSourceType;
+  sourceId?: string;
+  sourceTitle?: string;
   captureAudio: boolean;
   quality: "sd" | "hd";
   resolution: 360 | 480 | 720 | 1080 | 1440 | "source";
@@ -71,51 +73,12 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   bitrateKbps: 64,
 };
 
-const DEFAULT_SCREEN_SHARE_SETTINGS: ScreenShareSettings = {
-  sourceType: "screen",
-  captureAudio: true,
-  quality: "hd",
-  resolution: 1080,
-  frameRate: 30,
-  bitrateKbps: 8000,
-  audioBitrateKbps: 128,
-  viewerLimit: 0,
-  privacy: "public",
-};
-
-const SCREEN_SHARE_RESOLUTIONS: Record<
-  Exclude<ScreenShareSettings["resolution"], "source">,
-  { width: number; height: number }
-> = {
-  360: { width: 640, height: 360 },
-  480: { width: 854, height: 480 },
-  720: { width: 1280, height: 720 },
-  1080: { width: 1920, height: 1080 },
-  1440: { width: 2560, height: 1440 },
-};
-
-function getDisplaySurface(sourceType: ScreenShareSourceType) {
-  if (sourceType === "application") {
-    return "window";
-  }
-
-  if (sourceType === "screen") {
-    return "monitor";
-  }
-
-  return "browser";
-}
-
-function getContentHint(settings: ScreenShareSettings) {
-  if (settings.frameRate === 60) {
-    return "motion";
-  }
-
-  return settings.quality === "hd" ? "detail" : "text";
-}
-
 function getParticipantName(participant: RemoteParticipant) {
   return participant.name || participant.identity;
+}
+
+function isScreenParticipant(participant: RemoteParticipant) {
+  return participant.identity.endsWith(":screen");
 }
 
 function getParticipantMuted(participant: RemoteParticipant) {
@@ -139,7 +102,6 @@ export function useVoiceRoom() {
   const [remoteStreams, setRemoteStreams] = useState<RemoteAudioElement[]>([]);
   const [screenShares, setScreenShares] = useState<ScreenShareElement[]>([]);
   const [remoteVolumes, setRemoteVolumes] = useState<Record<string, number>>({});
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const muted = voiceSettings.muted;
 
@@ -162,13 +124,17 @@ export function useVoiceRoom() {
         },
       },
       ...Array.from(room.remoteParticipants.values()).map((participant) => ({
-        id: participant.identity,
-        username: getParticipantName(participant),
-        settings: {
-          muted: getParticipantMuted(participant),
-          noiseSuppression: true,
-        },
-      })),
+        participant,
+      }))
+        .filter(({ participant }) => !isScreenParticipant(participant))
+        .map(({ participant }) => ({
+          id: participant.identity,
+          username: getParticipantName(participant),
+          settings: {
+            muted: getParticipantMuted(participant),
+            noiseSuppression: true,
+          },
+        })),
     ];
 
     setVoiceUsers(nextUsers);
@@ -197,15 +163,6 @@ export function useVoiceRoom() {
     setScreenShares(Array.from(screenShareElementsRef.current.values()));
   }, []);
 
-  const refreshLocalScreenShareState = useCallback(() => {
-    const room = roomRef.current;
-    const publication = room?.localParticipant.getTrackPublication(
-      Track.Source.ScreenShare,
-    );
-
-    setIsScreenSharing(Boolean(publication && !publication.isMuted));
-  }, []);
-
   const leaveVoice = useCallback(() => {
     const room = roomRef.current;
 
@@ -222,7 +179,6 @@ export function useVoiceRoom() {
     });
     screenShareElementsRef.current.clear();
     setScreenShares([]);
-    setIsScreenSharing(false);
 
     if (room) {
       room.disconnect();
@@ -284,98 +240,6 @@ export function useVoiceRoom() {
     });
     setRemoteVolumes(nextVolumes);
   }, []);
-
-  const startScreenShare = useCallback(async (settings?: ScreenShareSettings) => {
-    const room = roomRef.current;
-
-    if (!room || state !== "connected") {
-      setError("Сначала войдите в голосовой канал");
-      return;
-    }
-
-    try {
-      setError("");
-      const shareSettings = settings ?? DEFAULT_SCREEN_SHARE_SETTINGS;
-      const resolution =
-        shareSettings.resolution === "source"
-          ? undefined
-          : SCREEN_SHARE_RESOLUTIONS[shareSettings.resolution];
-
-      await room.localParticipant.setScreenShareEnabled(
-        true,
-        {
-          audio: shareSettings.captureAudio
-            ? {
-                channelCount: 2,
-                echoCancellation: false,
-                noiseSuppression: false,
-                restrictOwnAudio: true,
-              }
-            : false,
-          video: {
-            displaySurface: getDisplaySurface(shareSettings.sourceType),
-          },
-          resolution: resolution
-            ? {
-                ...resolution,
-                frameRate: shareSettings.frameRate,
-              }
-            : undefined,
-          contentHint: getContentHint(shareSettings),
-          selfBrowserSurface: "exclude",
-          surfaceSwitching: "include",
-          systemAudio: shareSettings.captureAudio ? "include" : "exclude",
-        },
-        {
-          screenShareEncoding: {
-            maxBitrate: shareSettings.bitrateKbps * 1000,
-            maxFramerate: shareSettings.frameRate,
-            priority: "high",
-          },
-          simulcast: true,
-        },
-      );
-      refreshLocalScreenShareState();
-    } catch (err) {
-      refreshLocalScreenShareState();
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Не удалось начать демонстрацию экрана",
-      );
-    }
-  }, [refreshLocalScreenShareState, state]);
-
-  const stopScreenShare = useCallback(async () => {
-    const room = roomRef.current;
-
-    if (!room) {
-      setIsScreenSharing(false);
-      return;
-    }
-
-    try {
-      setError("");
-      await room.localParticipant.setScreenShareEnabled(false);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Не удалось остановить демонстрацию экрана",
-      );
-    } finally {
-      refreshLocalScreenShareState();
-    }
-  }, [refreshLocalScreenShareState]);
-
-  const toggleScreenShare = useCallback(async () => {
-    if (isScreenSharing) {
-      await stopScreenShare();
-      return;
-    }
-
-    await startScreenShare();
-  }, [isScreenSharing, startScreenShare, stopScreenShare]);
 
   const joinVoice = useCallback(
     async (args: JoinVoiceArgs) => {
@@ -461,8 +325,6 @@ export function useVoiceRoom() {
         .on(RoomEvent.TrackUnmuted, syncParticipants)
         .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
         .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
-        .on(RoomEvent.LocalTrackPublished, refreshLocalScreenShareState)
-        .on(RoomEvent.LocalTrackUnpublished, refreshLocalScreenShareState)
         .on(RoomEvent.Disconnected, () => {
           if (roomRef.current === room) {
             leaveVoice();
@@ -505,7 +367,6 @@ export function useVoiceRoom() {
     [
       detachRemoteTrack,
       leaveVoice,
-      refreshLocalScreenShareState,
       refreshParticipants,
       voiceSettings,
     ],
@@ -529,13 +390,9 @@ export function useVoiceRoom() {
       remoteStreams,
       screenShares,
       remoteVolumes,
-      isScreenSharing,
       joinVoice,
       leaveVoice,
       toggleMute,
-      startScreenShare,
-      stopScreenShare,
-      toggleScreenShare,
       updateVoiceSettings,
       updateRemoteVolume,
     }),
@@ -549,12 +406,8 @@ export function useVoiceRoom() {
       remoteStreams,
       remoteVolumes,
       screenShares,
-      isScreenSharing,
-      startScreenShare,
-      stopScreenShare,
       state,
       toggleMute,
-      toggleScreenShare,
       updateRemoteVolume,
       updateVoiceSettings,
       voiceSettings,

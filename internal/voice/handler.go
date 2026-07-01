@@ -3,6 +3,7 @@ package voice
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -10,7 +11,17 @@ import (
 	"github.com/google/uuid"
 	appauth "github.com/kimcrent/kimspeak/internal/auth"
 	"github.com/kimcrent/kimspeak/internal/guildmembers"
+	"github.com/kimcrent/kimspeak/internal/users"
 	lkauth "github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+)
+
+const (
+	clientApp    = "app"
+	clientScreen = "screen"
+
+	voiceTokenTTL  = time.Hour
+	screenTokenTTL = 10 * time.Minute
 )
 
 type Handler struct {
@@ -18,6 +29,8 @@ type Handler struct {
 	liveKitAPIKey    string
 	liveKitAPISecret string
 	guildMembersRepo *guildmembers.Repository
+	usersRepo        *users.Repository
+	logger           *slog.Logger
 }
 
 func NewHandler(
@@ -25,24 +38,36 @@ func NewHandler(
 	liveKitAPIKey,
 	liveKitAPISecret string,
 	guildMembersRepo *guildmembers.Repository,
+	usersRepo *users.Repository,
+	logger *slog.Logger,
 ) *Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Handler{
 		liveKitURL:       liveKitURL,
 		liveKitAPIKey:    liveKitAPIKey,
 		liveKitAPISecret: liveKitAPISecret,
 		guildMembersRepo: guildMembersRepo,
+		usersRepo:        usersRepo,
+		logger:           logger,
 	}
 }
 
 type createTokenRequest struct {
 	GuildID   string `json:"guild_id"`
 	ChannelID string `json:"channel_id"`
+	Client    string `json:"client"`
 }
 
 type createTokenResponse struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
-	Room  string `json:"room"`
+	URL              string `json:"url"`
+	Token            string `json:"token"`
+	Room             string `json:"room"`
+	Identity         string `json:"identity"`
+	Name             string `json:"name"`
+	Client           string `json:"client"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +96,18 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 
 	req.GuildID = strings.TrimSpace(req.GuildID)
 	req.ChannelID = strings.TrimSpace(req.ChannelID)
+	req.Client = strings.TrimSpace(req.Client)
+
+	if req.Client == "" {
+		req.Client = clientApp
+	}
+
+	if req.Client != clientApp && req.Client != clientScreen {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid client",
+		})
+		return
+	}
 
 	if req.GuildID == "" || req.ChannelID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -115,6 +152,27 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err := h.usersRepo.FindByID(r.Context(), userID)
+	if err != nil {
+		h.logger.Error("failed to find user for livekit token",
+			slog.String("user_id", userID.String()),
+			slog.String("guild_id", guildID.String()),
+			slog.String("channel_id", channelID.String()),
+			slog.String("client", req.Client),
+			slog.String("error", err.Error()),
+		)
+
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to find user",
+		})
+		return
+	}
+
+	displayName := strings.TrimSpace(user.Username)
+	if displayName == "" {
+		displayName = userID.String()
+	}
+
 	roomName := fmt.Sprintf("guild_%s_channel_%s", guildID, channelID)
 
 	grant := &lkauth.VideoGrant{
@@ -126,23 +184,82 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	grant.SetCanSubscribe(true)
 	grant.SetCanPublishData(true)
 
+	identity := userID.String()
+	tokenName := displayName
+	ttl := voiceTokenTTL
+
+	if req.Client == clientScreen {
+		identity = userID.String() + ":screen"
+		tokenName = displayName + " — экран"
+		ttl = screenTokenTTL
+
+		grant.SetCanPublish(true)
+		grant.SetCanSubscribe(false)
+		grant.SetCanPublishData(false)
+
+		grant.SetCanPublishSources([]livekit.TrackSource{
+			livekit.TrackSource_SCREEN_SHARE,
+			livekit.TrackSource_SCREEN_SHARE_AUDIO,
+		})
+	}
+
+	metadataBytes, err := json.Marshal(map[string]any{
+		"user_id":    userID.String(),
+		"username":   displayName,
+		"guild_id":   guildID.String(),
+		"channel_id": channelID.String(),
+		"client":     req.Client,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to build token metadata",
+		})
+		return
+	}
+
 	token, err := lkauth.NewAccessToken(h.liveKitAPIKey, h.liveKitAPISecret).
-		SetIdentity(userID.String()).
+		SetIdentity(identity).
+		SetName(tokenName).
+		SetMetadata(string(metadataBytes)).
 		SetVideoGrant(grant).
-		SetValidFor(30 * time.Minute).
+		SetValidFor(ttl).
 		ToJWT()
 
 	if err != nil {
+		h.logger.Error("failed to create livekit token",
+			slog.String("user_id", userID.String()),
+			slog.String("guild_id", guildID.String()),
+			slog.String("channel_id", channelID.String()),
+			slog.String("client", req.Client),
+			slog.String("identity", identity),
+			slog.String("error", err.Error()),
+		)
+
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": "failed to create livekit token",
 		})
 		return
 	}
 
+	h.logger.Info("livekit token issued",
+		slog.String("user_id", userID.String()),
+		slog.String("username", displayName),
+		slog.String("guild_id", guildID.String()),
+		slog.String("channel_id", channelID.String()),
+		slog.String("client", req.Client),
+		slog.String("identity", identity),
+		slog.String("room", roomName),
+		slog.Duration("ttl", ttl),
+	)
+
 	writeJSON(w, http.StatusCreated, createTokenResponse{
-		URL:   h.liveKitURL,
-		Token: token,
-		Room:  roomName,
+		URL:              h.liveKitURL,
+		Token:            token,
+		Room:             roomName,
+		Identity:         identity,
+		Name:             tokenName,
+		Client:           req.Client,
+		ExpiresInSeconds: int(ttl.Seconds()),
 	})
 }
 

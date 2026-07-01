@@ -38,6 +38,8 @@ func (s *Server) NewRouter() http.Handler {
 		s.cfg.LiveKitAPIKey,
 		s.cfg.LiveKitAPISecret,
 		guildMembersRepo,
+		usersRepository,
+		s.logger,
 	)
 
 	mux.Handle("/voice/token", authHandler.AuthMiddleware(http.HandlerFunc(voiceHandler.CreateToken)))

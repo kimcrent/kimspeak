@@ -1,3 +1,10 @@
+mod native_screen_share;
+
+use native_screen_share::{
+    list_capture_sources, start_native_screen_share, stop_native_screen_share,
+    NativeScreenShareState,
+};
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -77,7 +84,13 @@ async fn api_request(request: ApiRequest) -> Result<ApiResponse, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![api_request])
+        .manage(NativeScreenShareState::default())
+        .invoke_handler(tauri::generate_handler![
+            api_request,
+            list_capture_sources,
+            start_native_screen_share,
+            stop_native_screen_share
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

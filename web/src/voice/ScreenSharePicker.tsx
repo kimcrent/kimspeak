@@ -1,4 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  isNativeScreenShareAvailable,
+  listCaptureSources,
+  type CaptureSource,
+} from "../tauri/nativeScreenShare";
 import type {
   ScreenShareSettings,
   ScreenShareSourceType,
@@ -14,21 +19,9 @@ const SOURCE_TABS: Array<{
   label: string;
   description: string;
 }> = [
-  {
-    id: "application",
-    label: "Приложения",
-    description: "Окна программ",
-  },
-  {
-    id: "screen",
-    label: "Весь экран",
-    description: "Мониторы",
-  },
-  {
-    id: "device",
-    label: "Устройства",
-    description: "Вкладки и источники",
-  },
+  { id: "application", label: "Приложения", description: "Окна программ" },
+  { id: "screen", label: "Весь экран", description: "Мониторы" },
+  { id: "device", label: "Устройства", description: "Вкладки и источники" },
 ];
 
 const RESOLUTIONS: ScreenShareSettings["resolution"][] = [
@@ -53,16 +46,16 @@ function getResolutionLabel(value: ScreenShareSettings["resolution"]) {
   return value === "source" ? "Источник" : String(value);
 }
 
-function getSourcePreviewTitle(sourceType: ScreenShareSourceType) {
-  if (sourceType === "application") {
-    return "Окно приложения";
+function sourceMatchesTab(source: CaptureSource, tab: ScreenShareSourceType) {
+  if (tab === "application") {
+    return source.type === "window";
   }
 
-  if (sourceType === "screen") {
-    return "Весь экран";
+  if (tab === "screen") {
+    return source.type === "monitor";
   }
 
-  return "Устройство";
+  return source.type !== "window" && source.type !== "monitor";
 }
 
 export function ScreenSharePicker({
@@ -71,6 +64,8 @@ export function ScreenSharePicker({
 }: ScreenSharePickerProps) {
   const [settings, setSettings] = useState<ScreenShareSettings>({
     sourceType: "application",
+    sourceId: undefined,
+    sourceTitle: undefined,
     captureAudio: true,
     quality: "hd",
     resolution: 1080,
@@ -80,6 +75,51 @@ export function ScreenSharePicker({
     viewerLimit: 0,
     privacy: "public",
   });
+  const [nativeSources, setNativeSources] = useState<CaptureSource[]>([]);
+  const [isLoadingSources, setIsLoadingSources] = useState(() =>
+    isNativeScreenShareAvailable(),
+  );
+
+  useEffect(() => {
+    if (!isNativeScreenShareAvailable()) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    listCaptureSources()
+      .then((sources) => {
+        if (!isCancelled) {
+          setNativeSources(sources);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setNativeSources([]);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingSources(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const visibleSources = useMemo(
+    () =>
+      nativeSources.filter((source) =>
+        sourceMatchesTab(source, settings.sourceType),
+      ),
+    [nativeSources, settings.sourceType],
+  );
+
+  const selectedSource =
+    visibleSources.find((source) => source.id === settings.sourceId) ||
+    visibleSources[0];
 
   const readyPresetLabel = useMemo(() => {
     const resolution = getResolutionLabel(settings.resolution);
@@ -88,6 +128,34 @@ export function ScreenSharePicker({
 
   const setPatch = (patch: Partial<ScreenShareSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));
+  };
+
+  const selectTab = (sourceType: ScreenShareSourceType) => {
+    setSettings((current) => ({
+      ...current,
+      sourceType,
+      sourceId: undefined,
+      sourceTitle: undefined,
+    }));
+  };
+
+  const selectSource = (source: CaptureSource) => {
+    setPatch({
+      sourceId: source.id,
+      sourceTitle: source.title,
+    });
+  };
+
+  const submit = () => {
+    if (!selectedSource) {
+      return;
+    }
+
+    onStart({
+      ...settings,
+      sourceId: selectedSource.id,
+      sourceTitle: selectedSource.title,
+    });
   };
 
   return (
@@ -114,7 +182,7 @@ export function ScreenSharePicker({
                   : "screenPickerTab"
               }
               key={tab.id}
-              onClick={() => setPatch({ sourceType: tab.id })}
+              onClick={() => selectTab(tab.id)}
               type="button"
             >
               <span>{tab.label}</span>
@@ -125,26 +193,49 @@ export function ScreenSharePicker({
 
         <div className="screenPickerBody">
           <div className="screenPickerSources">
-            <button className="screenSourceCard selected" type="button">
-              <span className="screenSourcePreview">
-                <b>{getSourcePreviewTitle(settings.sourceType)}</b>
-                <small>{readyPresetLabel}</small>
-              </span>
-              <strong>{getSourcePreviewTitle(settings.sourceType)}</strong>
-              <small>
-                После нажатия старта система подтвердит конкретный источник
-                захвата.
-              </small>
-            </button>
+            {visibleSources.map((source) => (
+              <button
+                className={
+                  selectedSource?.id === source.id
+                    ? "screenSourceCard selected"
+                    : "screenSourceCard"
+                }
+                key={source.id}
+                onClick={() => selectSource(source)}
+                type="button"
+              >
+                <span className="screenSourcePreview">
+                  {source.thumbnail ? (
+                    <img alt="" src={source.thumbnail} />
+                  ) : (
+                    <>
+                      <b>{source.title}</b>
+                      <small>{readyPresetLabel}</small>
+                    </>
+                  )}
+                </span>
+                <strong>{source.title}</strong>
+                <small>
+                  {source.type === "monitor"
+                    ? "Захват всего экрана"
+                    : source.type === "window"
+                      ? "Захват отдельного окна"
+                      : "Нативный источник"}
+                </small>
+              </button>
+            ))}
 
-            <button className="screenSourceCard" type="button">
-              <span className="screenSourcePreview secondary">
-                <b>Предпросмотр</b>
-                <small>Будет доступен после нативного захвата</small>
-              </span>
-              <strong>Последний выбранный источник</strong>
-              <small>Можно подключить через desktop backend.</small>
-            </button>
+            {isLoadingSources && (
+              <div className="screenSourceLoading">
+                Загружаем источники...
+              </div>
+            )}
+
+            {!isLoadingSources && visibleSources.length === 0 && (
+              <div className="screenSourceLoading">
+                Нет доступных native-источников
+              </div>
+            )}
           </div>
 
           <aside className="screenPickerSettings">
@@ -256,7 +347,7 @@ export function ScreenSharePicker({
                     }
                     type="button"
                   >
-                    −
+                    -
                   </button>
                   <b>{settings.bitrateKbps} Kbps</b>
                   <button
@@ -301,7 +392,7 @@ export function ScreenSharePicker({
                     }
                     type="button"
                   >
-                    −
+                    -
                   </button>
                   <b>{settings.viewerLimit || "∞"}</b>
                   <button
@@ -324,7 +415,8 @@ export function ScreenSharePicker({
           </button>
           <button
             className="screenPickerStart"
-            onClick={() => onStart(settings)}
+            disabled={!selectedSource}
+            onClick={submit}
             type="button"
           >
             Начать прямой эфир

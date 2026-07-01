@@ -2,6 +2,20 @@
   box-sizing: border-box;
 }
 
+:root {
+  --ks-bg: #070708;
+  --ks-panel: #17181b;
+  --ks-panel-2: #202125;
+  --ks-line: #34363d;
+  --ks-text: #f6f6f7;
+  --ks-muted: #aeb3bc;
+  --ks-red: #7f8dff;
+  --ks-accent-hover: #95a1ff;
+  --ks-red-soft: rgba(127, 141, 255, 0.18);
+  --ks-red-line: rgba(127, 141, 255, 0.56);
+  --ks-white-line: rgba(255, 255, 255, 0.12);
+}
+
 html,
 body,
 #root {
@@ -55,18 +69,18 @@ input:disabled {
   place-items: center;
   padding: 32px;
   background:
-    linear-gradient(135deg, rgba(88, 101, 242, 0.16), transparent 42%),
-    linear-gradient(315deg, rgba(35, 165, 90, 0.14), transparent 36%),
-    #1f2024;
+    linear-gradient(135deg, rgba(127, 141, 255, 0.18), transparent 42%),
+    linear-gradient(315deg, rgba(255, 255, 255, 0.08), transparent 36%),
+    var(--ks-bg);
 }
 
 .loadingCard,
 .authCard {
   width: min(430px, 100%);
   padding: 24px;
-  border: 1px solid #3a3d44;
+  border: 1px solid var(--ks-line);
   border-radius: 8px;
-  background: rgba(43, 45, 49, 0.96);
+  background: rgba(23, 24, 27, 0.96);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
 }
 
@@ -98,10 +112,14 @@ input:disabled {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: linear-gradient(135deg, #5865f2, #23a55a);
-  color: #ffffff;
+  border: 1px solid var(--ks-white-line);
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.54)),
+    url("/kimspeak-mascot.png") center 28% / cover;
+  color: transparent;
   font-size: 34px;
   font-weight: 900;
+  box-shadow: 0 0 0 1px rgba(127, 141, 255, 0.24), 0 14px 44px rgba(0, 0, 0, 0.28);
 }
 
 .authHero h1 {
@@ -144,7 +162,7 @@ input:disabled {
 }
 
 .authTab.active {
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
@@ -180,7 +198,7 @@ input:disabled {
 
 .authForm input:focus,
 .messageInput input:focus {
-  border-color: #5865f2;
+  border-color: var(--ks-red);
 }
 
 .submitButton,
@@ -188,7 +206,7 @@ input:disabled {
   min-height: 44px;
   border: 0;
   border-radius: 8px;
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
   font-weight: 900;
 }
@@ -217,7 +235,7 @@ input:disabled {
   display: grid;
   grid-template-columns: 72px 286px minmax(0, 1fr) 272px;
   overflow: hidden;
-  background: #313338;
+  background: #2a2b30;
 }
 
 .servers,
@@ -261,7 +279,11 @@ input:disabled {
 }
 
 .serverLogo {
-  background: linear-gradient(135deg, #5865f2, #23a55a);
+  border: 1px solid var(--ks-white-line);
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.62)),
+    url("/kimspeak-mascot.png") center 28% / cover;
+  color: transparent;
   font-size: 24px;
 }
 
@@ -282,20 +304,20 @@ input:disabled {
 
 .server:hover,
 .server.active {
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
 .server.addServer {
   border: 1px dashed #3a3d44;
   background: transparent;
-  color: #23a55a;
+  color: #ffffff;
   font-size: 22px;
 }
 
 .server.addServer:hover {
-  border-color: #23a55a;
-  background: rgba(35, 165, 90, 0.12);
+  border-color: var(--ks-red);
+  background: var(--ks-red-soft);
   color: #ffffff;
 }
 
@@ -355,7 +377,7 @@ input:disabled {
 
 .channelActionButton:hover:not(:disabled),
 .profileLogout:hover {
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
@@ -440,7 +462,7 @@ input:disabled {
 
 .channel:hover,
 .channel.active {
-  background: #404249;
+  background: var(--ks-red-soft);
   color: #ffffff;
 }
 
@@ -448,14 +470,14 @@ input:disabled {
   min-height: 30px;
   border: 0;
   border-radius: 6px;
-  background: #23a55a;
+  background: var(--ks-red);
   color: #ffffff;
   font-size: 12px;
   font-weight: 900;
 }
 
 .channelJoinButton:hover {
-  background: #2fbe68;
+  background: var(--ks-accent-hover);
 }
 
 .channelJoinButton:disabled {
@@ -484,7 +506,7 @@ input:disabled {
 }
 
 .profileStatus.online {
-  color: #23a55a;
+  color: #ffffff;
 }
 
 .profileLogout {
@@ -502,7 +524,7 @@ input:disabled {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #5865f2;
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
   color: #ffffff;
   font-weight: 900;
 }
@@ -523,7 +545,7 @@ input:disabled {
   justify-content: space-between;
   padding: 0 20px;
   border-bottom: 1px solid #202227;
-  background: #313338;
+  background: #2a2b30;
 }
 
 .topbar strong {
@@ -545,6 +567,20 @@ input:disabled {
   overflow: auto;
 }
 
+.chat--screen-share-active {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat--screen-share-active::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.chat--screen-share-active .emptyState {
+  margin-top: 20px;
+}
+
 .message {
   display: flex;
   gap: 12px;
@@ -557,7 +593,7 @@ input:disabled {
 }
 
 .ownMessage .avatar {
-  background: #23a55a;
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
 }
 
 .messageBody {
@@ -610,7 +646,7 @@ input:disabled {
 }
 
 .emptyActionButton:hover {
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
@@ -641,11 +677,11 @@ input:disabled {
   place-items: center;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: #23a55a;
+  background: var(--ks-red);
   color: #ffffff;
   font-size: 34px;
   font-weight: 900;
-  box-shadow: 0 0 0 12px rgba(35, 165, 90, 0.14);
+  box-shadow: 0 0 0 12px var(--ks-red-soft);
 }
 
 .voiceRoomJoinButton {
@@ -654,13 +690,13 @@ input:disabled {
   margin-top: 22px;
   border: 0;
   border-radius: 8px;
-  background: #23a55a;
+  background: var(--ks-red);
   color: #ffffff;
   font-weight: 900;
 }
 
 .voiceRoomJoinButton:hover {
-  background: #2fbe68;
+  background: var(--ks-accent-hover);
 }
 
 .voiceRoomJoinButton:disabled {
@@ -713,7 +749,7 @@ input:disabled {
   place-items: center;
   margin-bottom: 14px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #5865f2, #23a55a);
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
   color: #ffffff;
   font-size: 34px;
   font-weight: 900;
@@ -759,14 +795,14 @@ input:disabled {
 }
 
 .inviteForm input:focus {
-  border-color: #5865f2;
+  border-color: var(--ks-red);
 }
 
 .inviteForm button {
   min-height: 36px;
   border: 0;
   border-radius: 8px;
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
   font-weight: 900;
 }
@@ -823,7 +859,7 @@ input:disabled {
 }
 
 .inviteToastActions button:last-child {
-  background: #23a55a;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
@@ -838,7 +874,7 @@ input:disabled {
 }
 
 .member.current .memberAvatar {
-  background: #23a55a;
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
 }
 
 .member.muted {
@@ -876,13 +912,13 @@ input:disabled {
 }
 
 .memberRole.owner {
-  background: rgba(88, 101, 242, 0.18);
-  color: #aeb6ff;
+  background: var(--ks-red-soft);
+  color: #f1f2f4;
 }
 
 .memberRole.admin {
-  background: rgba(35, 165, 90, 0.16);
-  color: #7ae0a7;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f2f4;
 }
 
 .statRow {
@@ -930,7 +966,7 @@ input:disabled {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
   font-size: 20px;
   font-weight: 900;
@@ -958,7 +994,7 @@ input:disabled {
 }
 
 .createModalForm input:focus {
-  border-color: #5865f2;
+  border-color: var(--ks-red);
 }
 
 .createModalActions {
@@ -987,12 +1023,12 @@ input:disabled {
 }
 
 .createModalPrimary {
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 }
 
 .createModalPrimary:hover:not(:disabled) {
-  background: #6875ff;
+  background: var(--ks-accent-hover);
 }
 
 @media (max-width: 1180px) {
@@ -1154,7 +1190,7 @@ input:disabled {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #23a55a;
+  background: var(--ks-red);
   transition: width 0.08s linear;
 }
 
@@ -1207,7 +1243,7 @@ input:disabled {
 .voice-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .voice-slider {
@@ -1227,7 +1263,7 @@ input:disabled {
 
 .voice-slider input {
   width: 100%;
-  accent-color: #5865f2;
+  accent-color: var(--ks-red);
 }
 
 .voice-panel__audios {
@@ -1312,12 +1348,12 @@ input:disabled {
 }
 
 .voice-settings__field select:focus {
-  border-color: #5865f2;
+  border-color: var(--ks-red);
 }
 
 .voice-settings__field input[type="range"] {
   width: 100%;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .voice-settings__field small {
@@ -1351,8 +1387,8 @@ input:disabled {
   display: block;
   height: 10px;
   border-radius: 999px;
-  background: #23a55a;
-  box-shadow: 0 0 18px rgba(35, 165, 90, 0.24);
+  background: var(--ks-red);
+  box-shadow: 0 0 18px rgba(127, 141, 255, 0.24);
   transition: width 0.08s linear;
 }
 
@@ -1378,7 +1414,7 @@ input:disabled {
 .voice-settings__toggles input {
   width: 16px;
   height: 16px;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .voiceChannelTree {
@@ -1412,12 +1448,12 @@ input:disabled {
 }
 
 .voiceChannelHeader:hover {
-  background: #35373c;
+  background: rgba(127, 141, 255, 0.1);
   color: #ffffff;
 }
 
 .voiceChannelHeader.active {
-  background: #404249;
+  background: var(--ks-red-soft);
   color: #ffffff;
 }
 
@@ -1441,7 +1477,7 @@ input:disabled {
 .voiceChannelState {
   font-size: 11px;
   font-weight: 700;
-  color: #23a55a;
+  color: #ffffff;
 }
 
 .voiceChannelMembers {
@@ -1488,7 +1524,7 @@ input:disabled {
   align-items: center;
   justify-content: center;
 
-  background: #5865f2;
+  background: var(--ks-red);
   color: #ffffff;
 
   font-size: 12px;
@@ -1562,7 +1598,7 @@ input:disabled {
 }
 
 .channelEditButton:hover:not(:disabled) {
-  background: rgba(88, 101, 242, 0.16);
+  background: var(--ks-red-soft);
   color: #aeb6ff;
 }
 
@@ -1607,7 +1643,7 @@ input:focus-visible {
 }
 
 .profileSettings:hover {
-  background: rgba(88, 101, 242, 0.2);
+  background: var(--ks-red-soft);
   color: #ffffff;
 }
 
@@ -1664,14 +1700,14 @@ input:focus-visible {
 }
 
 .voice-panel__screen {
-  background: rgba(88, 101, 242, 0.16);
+  background: var(--ks-red-soft);
   color: #dfe1e6;
 }
 
 .voice-panel__screen:hover:not(:disabled),
 .voice-panel__screen.active {
-  border-color: rgba(88, 101, 242, 0.34);
-  background: #5865f2;
+  border-color: var(--ks-red-line);
+  background: var(--ks-red);
   color: #ffffff;
 }
 
@@ -1684,7 +1720,7 @@ input:focus-visible {
 }
 
 .voice-panel__icon:hover {
-  background: rgba(88, 101, 242, 0.24);
+  background: var(--ks-red-soft);
   color: #ffffff;
 }
 
@@ -1704,14 +1740,14 @@ input:focus-visible {
 }
 
 .screenShareStage {
-  width: min(980px, 100%);
+  width: min(1180px, 100%);
   display: grid;
   gap: 12px;
   margin: 16px auto 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ks-white-line);
   border-radius: 8px;
   padding: 14px;
-  background: #24262b;
+  background: #15161a;
 }
 
 .screenShareStageHeader {
@@ -1754,12 +1790,49 @@ input:focus-visible {
   gap: 12px;
 }
 
+.screenShareGrid.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.screenShareGrid.multi {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  align-items: start;
+}
+
 .screenShareTile {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #343740;
+  border: 1px solid #3b3d45;
   border-radius: 8px;
-  background: #111214;
+  background: #070708;
+  outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.screenShareTile:hover,
+.screenShareTile:focus-visible {
+  border-color: var(--ks-red-line);
+  box-shadow: 0 0 0 1px rgba(127, 141, 255, 0.18);
+}
+
+.screenShareTile.selected {
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 1px var(--ks-red-line), 0 0 0 4px rgba(127, 141, 255, 0.12), 0 18px 70px rgba(0, 0, 0, 0.36);
+}
+
+.screenShareGrid.multi .screenShareTile.selected {
+  grid-row: 1 / span 8;
+}
+
+.screenShareGrid.multi .screenShareTile:not(.selected) {
+  cursor: pointer;
+}
+
+.screenShareGrid.multi .screenShareTile:not(.selected):hover {
+  transform: translateY(-1px);
 }
 
 .screenShareTile.fullscreen {
@@ -1781,6 +1854,15 @@ input:focus-visible {
   display: grid;
   place-items: center;
   background: #050608;
+}
+
+.screenShareGrid.single .screenShareVideo,
+.screenShareGrid.multi .screenShareTile.selected .screenShareVideo {
+  min-height: clamp(300px, 52vh, 620px);
+}
+
+.screenShareGrid.multi .screenShareTile:not(.selected) .screenShareVideo {
+  min-height: 0;
 }
 
 .screenShareVideo video {
@@ -1813,17 +1895,27 @@ input:focus-visible {
 .screenShareCaption button {
   min-height: 28px;
   flex: 0 0 auto;
-  border: 1px solid rgba(88, 101, 242, 0.28);
+  border: 1px solid var(--ks-red-line);
   border-radius: 6px;
   padding: 0 9px;
-  background: rgba(88, 101, 242, 0.16);
+  background: var(--ks-red-soft);
   color: #ffffff;
   font-size: 12px;
   font-weight: 900;
 }
 
 .screenShareCaption button:hover {
-  background: #5865f2;
+  background: var(--ks-accent-hover);
+}
+
+.screenShareGrid.multi .screenShareTile:not(.selected) .screenShareCaption {
+  min-height: 30px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.screenShareGrid.multi .screenShareTile:not(.selected) .screenShareCaption button {
+  display: none;
 }
 
 .screenShareLocalNotice {
@@ -1851,14 +1943,15 @@ input:focus-visible {
 }
 
 .voiceChannelHeader.active {
-  border-color: rgba(88, 101, 242, 0.2);
-  background: linear-gradient(90deg, rgba(88, 101, 242, 0.2), #404249);
+  border-color: var(--ks-red-line);
+  background: linear-gradient(90deg, rgba(127, 141, 255, 0.24), #404249);
+  box-shadow: inset 3px 0 0 var(--ks-red);
 }
 
 .voiceChannelState {
   border-radius: 999px;
   padding: 2px 7px;
-  background: rgba(35, 165, 90, 0.14);
+  background: var(--ks-red-soft);
 }
 
 .voiceChannelMember {
@@ -1873,7 +1966,7 @@ input:focus-visible {
 }
 
 .voiceChannelMember.current .voiceChannelMemberAvatar {
-  background: #23a55a;
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
 }
 
 .voiceChannelMemberName {
@@ -1966,7 +2059,7 @@ input:focus-visible {
 }
 
 .voiceUserMenuTitle b {
-  color: #7ae0a7;
+  color: #ffffff;
 }
 
 .voiceUserMenuSlider,
@@ -1981,7 +2074,7 @@ input:focus-visible {
 .voiceUserMenuSlider input,
 .settingsSlider input {
   width: 100%;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .voiceUserMenuReset {
@@ -2136,8 +2229,8 @@ input:focus-visible {
 }
 
 .settingSwitch.enabled {
-  border-color: rgba(35, 165, 90, 0.34);
-  background: rgba(35, 165, 90, 0.1);
+  border-color: var(--ks-red-line);
+  background: var(--ks-red-soft);
 }
 
 .settingSwitch b {
@@ -2150,8 +2243,8 @@ input:focus-visible {
 }
 
 .settingSwitch.enabled b {
-  background: rgba(35, 165, 90, 0.18);
-  color: #7ae0a7;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f2f4;
 }
 
 .settingsToggles {
@@ -2177,7 +2270,7 @@ input:focus-visible {
 .settingsToggle input {
   width: 16px;
   height: 16px;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .screenPickerBackdrop {
@@ -2196,9 +2289,9 @@ input:focus-visible {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ks-white-line);
   border-radius: 8px;
-  background: #2b2d31;
+  background: #202125;
   color: #ffffff;
   box-shadow: 0 30px 120px rgba(0, 0, 0, 0.58);
 }
@@ -2208,7 +2301,7 @@ input:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 12px;
-  background: #202227;
+  background: #141519;
 }
 
 .screenPickerTab {
@@ -2231,8 +2324,9 @@ input:focus-visible {
 }
 
 .screenPickerTab.active {
-  background: #363941;
+  background: #303138;
   color: #ffffff;
+  box-shadow: inset 0 -2px 0 var(--ks-red);
 }
 
 .screenPickerBody {
@@ -2260,13 +2354,14 @@ input:focus-visible {
   border-radius: 8px;
   padding: 0 0 12px;
   overflow: hidden;
-  background: #1e1f22;
+  background: #15161a;
   color: #dfe1e6;
   text-align: left;
 }
 
 .screenSourceCard.selected {
-  border-color: #5865f2;
+  border-color: var(--ks-red);
+  box-shadow: 0 0 0 1px rgba(127, 141, 255, 0.36), 0 12px 40px rgba(0, 0, 0, 0.28);
 }
 
 .screenSourceCard strong,
@@ -2286,20 +2381,39 @@ input:focus-visible {
   align-content: center;
   gap: 8px;
   background:
-    linear-gradient(135deg, rgba(88, 101, 242, 0.28), transparent 52%),
-    #0e1015;
+    linear-gradient(135deg, rgba(127, 141, 255, 0.22), transparent 52%),
+    #090a0d;
   color: #ffffff;
 }
 
 .screenSourcePreview.secondary {
   background:
-    linear-gradient(135deg, rgba(35, 165, 90, 0.22), transparent 52%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
     #101317;
+}
+
+.screenSourcePreview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .screenSourcePreview b,
 .screenSourcePreview small {
   margin: 0;
+}
+
+.screenSourceLoading {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #3a3d44;
+  border-radius: 8px;
+  background: #1e1f22;
+  color: #949ba4;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .screenPickerSettings {
@@ -2316,7 +2430,7 @@ input:focus-visible {
 
 .screenPickerSettings h3 {
   margin: 0;
-  color: #8da2d6;
+  color: #f1f2f4;
   font-size: 16px;
   font-weight: 700;
 }
@@ -2343,7 +2457,7 @@ input:focus-visible {
   width: 22px;
   height: 22px;
   justify-self: start;
-  accent-color: #23a55a;
+  accent-color: var(--ks-red);
 }
 
 .segmentedControl,
@@ -2355,7 +2469,7 @@ input:focus-visible {
   gap: 4px;
   border-radius: 8px;
   padding: 3px;
-  background: #202838;
+  background: #141821;
 }
 
 .segmentedControl button,
@@ -2382,7 +2496,7 @@ input:focus-visible {
 }
 
 .segmentedControl button.active {
-  background: #5865f2;
+  background: var(--ks-red);
 }
 
 .stepperControl {
@@ -2395,7 +2509,7 @@ input:focus-visible {
 .stepperControl button {
   min-width: 28px;
   padding: 0;
-  color: #7ae0a7;
+  color: #ffffff;
 }
 
 .stepperControl button:first-child {
@@ -2415,7 +2529,7 @@ input:focus-visible {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;
-  background: #202227;
+  background: #141519;
 }
 
 .screenPickerBack,
@@ -2430,16 +2544,16 @@ input:focus-visible {
 
 .screenPickerBack {
   background: transparent;
-  color: #70a5ff;
+  color: #f1f2f4;
 }
 
 .screenPickerStart {
   min-width: 220px;
-  background: #5865f2;
+  background: var(--ks-red);
 }
 
 .screenPickerStart:hover {
-  background: #6875ff;
+  background: var(--ks-accent-hover);
 }
 
 @media (max-width: 1180px) {
@@ -2458,6 +2572,18 @@ input:focus-visible {
 
   .screenPickerSources {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .screenShareGrid.multi {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .screenShareGrid.multi .screenShareTile.selected {
+    grid-row: auto;
+  }
+
+  .screenShareGrid.multi .screenShareTile:not(.selected) {
+    width: min(280px, 100%);
   }
 }
 

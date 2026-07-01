@@ -7,6 +7,7 @@ import {
   createChannel,
   createGuild,
   createMessage,
+  createVoiceToken,
   declineGuildInvitation,
   deleteChannel as deleteChannelRequest,
   getMe,
@@ -32,6 +33,12 @@ import { VoicePanel } from "./voice/VoicePanel";
 import { ScreenShareStage } from "./voice/ScreenShareStage";
 import { ScreenSharePicker } from "./voice/ScreenSharePicker";
 import { DesktopTitleBar } from "./components/DesktopTitleBar";
+import {
+  isNativeScreenShareAvailable,
+  startNativeScreenShare,
+  stopNativeScreenShare,
+} from "./tauri/nativeScreenShare";
+import type { NativeScreenResolution } from "./tauri/nativeScreenShare";
 import type { ScreenShareSettings, VoiceSettings } from "./voice/useVoiceRoom";
 import { useVoiceRoom } from "./voice/useVoiceRoom";
 
@@ -308,6 +315,7 @@ function App() {
   const [messageDraft, setMessageDraft] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isScreenSharePickerOpen, setIsScreenSharePickerOpen] = useState(false);
+  const [isNativeScreenSharing, setIsNativeScreenSharing] = useState(false);
   const [voiceUserMenu, setVoiceUserMenu] = useState<VoiceUserMenu>(null);
 
   const [status, setStatus] = useState("Готов к работе");
@@ -366,6 +374,9 @@ function App() {
     voice.currentChannelId === activeChannel.id;
   const isActiveVoiceConnecting =
     isActiveVoiceChannelJoined && voice.state === "connecting";
+  const isScreenShareStageVisible =
+    isActiveVoiceChannelJoined &&
+    (isNativeScreenSharing || voice.screenShares.length > 0);
   const voiceUserMenuVolume = voiceUserMenu
     ? (voice.remoteVolumes[voiceUserMenu.userId] ?? 1)
     : 1;
@@ -701,7 +712,7 @@ function App() {
   }, [activeGuildId, token]);
 
   useEffect(() => {
-    if (!token || !activeChannelId || activeChannel?.type !== "text") {
+    if (!token || !activeChannelId) {
       setMessages([]);
       return;
     }
@@ -753,7 +764,7 @@ function App() {
     return () => {
       isCancelled = true;
     };
-  }, [activeChannel?.type, activeChannelId, token]);
+  }, [activeChannelId, token]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -967,17 +978,139 @@ function App() {
   }
 
   async function handleScreenShareAction() {
-    if (voice.isScreenSharing) {
-      await voice.stopScreenShare();
+    if (isNativeScreenSharing) {
+      try {
+        await stopNativeScreenShare();
+        setIsNativeScreenSharing(false);
+        setStatus("Нативная демонстрация экрана остановлена");
+      } catch (error) {
+        console.error(error);
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Не удалось остановить нативную демонстрацию экрана",
+        );
+      }
+
       return;
     }
 
     setIsScreenSharePickerOpen(true);
   }
 
+  async function handleLeaveVoice() {
+    if (isNativeScreenSharing) {
+      try {
+        await stopNativeScreenShare();
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsNativeScreenSharing(false);
+      }
+    }
+
+    voice.leaveVoice();
+  }
+
+  function normalizeNativeScreenResolution(
+    value: unknown,
+  ): NativeScreenResolution {
+    if (value === 720 || value === "720" || value === "720p") {
+      return "720p";
+    }
+
+    if (value === 1080 || value === "1080" || value === "1080p") {
+      return "1080p";
+    }
+
+    if (
+      value === 1440 ||
+      value === "1440" ||
+      value === "1440p" ||
+      value === "2k"
+    ) {
+      return "1440p";
+    }
+
+    return "1080p";
+  }
+
   async function handleStartScreenShare(settings: ScreenShareSettings) {
     setIsScreenSharePickerOpen(false);
-    await voice.startScreenShare(settings);
+
+    if (voice.state !== "connected" || !voice.currentChannelId) {
+      setError("Сначала нужно подключиться к голосовому каналу");
+      return;
+    }
+
+    if (!isNativeScreenShareAvailable()) {
+      setError("Нативная демонстрация доступна только в desktop-приложении");
+      return;
+    }
+
+    if (!token || !activeGuildId) {
+      setError("Не удалось получить данные текущего сервера для трансляции");
+      return;
+    }
+
+    try {
+      setError("");
+      setStatus("Получаем токен для нативной демонстрации...");
+
+      const screenToken = await createVoiceToken(
+        token,
+        activeGuildId,
+        voice.currentChannelId,
+        "screen",
+      );
+
+      setStatus("Запускаем нативную демонстрацию экрана...");
+
+      const nativeScreenShareRequest = {
+        livekitUrl: screenToken.url,
+        livekitToken: screenToken.token,
+        room: screenToken.room,
+        sourceId: settings.sourceId || "monitor:primary",
+        sourceTitle: settings.sourceTitle,
+        sourceType: settings.sourceType,
+        captureAudio: settings.captureAudio,
+        quality: settings.quality,
+        resolution: normalizeNativeScreenResolution(settings.resolution),
+        frameRate: settings.frameRate,
+        bitrateKbps: settings.bitrateKbps,
+        audioBitrateKbps: settings.audioBitrateKbps,
+        viewerLimit: settings.viewerLimit,
+        privacy: settings.privacy,
+      };
+
+      console.log("Native screen share settings:", settings);
+      console.log("Native screen share token response:", {
+        ...screenToken,
+        token: "<hidden>",
+      });
+      console.log("Native screen share request:", {
+        ...nativeScreenShareRequest,
+        livekitToken: "<hidden>",
+      });
+
+      await startNativeScreenShare(nativeScreenShareRequest);
+
+      setIsNativeScreenSharing(true);
+      setStatus("Нативная демонстрация экрана запущена");
+    } catch (error) {
+      console.error("Failed to start native screen share:", error);
+      setIsNativeScreenSharing(false);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : JSON.stringify(error);
+
+      setError(`Не удалось запустить нативную демонстрацию экрана: ${message}`);
+      setStatus("Ошибка демонстрации экрана");
+    }
   }
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
@@ -1094,6 +1227,16 @@ function App() {
   }
 
   function logout() {
+    if (isNativeScreenSharing) {
+      stopNativeScreenShare()
+        .catch((error) => {
+          console.error(error);
+        })
+        .finally(() => {
+          setIsNativeScreenSharing(false);
+        });
+    }
+
     voice.leaveVoice();
     localStorage.removeItem(TOKEN_KEY);
     setToken("");
@@ -1532,7 +1675,11 @@ function App() {
             </div>
           </header>
 
-          <section className="chat">
+          <section
+            className={
+              isScreenShareStageVisible ? "chat chat--screen-share-active" : "chat"
+            }
+          >
             {!activeGuild && (
               <div className="emptyState">
                 <h2>Создайте первый сервер</h2>
@@ -1552,10 +1699,10 @@ function App() {
               </div>
             )}
 
-            {activeChannel?.type === "voice" && (
+            {activeChannel?.type === "voice" && !activeChannel.id && (
               <div className="voiceRoom">
                 <div className="pulse">♪</div>
-                <h2>{activeChannel.name}</h2>
+                <h2>{activeChannel?.name}</h2>
                 <p>
                   Голосовая комната готова. Текстовые сообщения доступны в
                   каналах с #.
@@ -1565,7 +1712,11 @@ function App() {
                   disabled={
                     isActiveVoiceChannelJoined && voice.state !== "error"
                   }
-                  onClick={() => handleJoinVoiceChannel(activeChannel)}
+                  onClick={() => {
+                    if (activeChannel) {
+                      handleJoinVoiceChannel(activeChannel);
+                    }
+                  }}
                   type="button"
                 >
                   {isActiveVoiceConnecting
@@ -1579,17 +1730,17 @@ function App() {
 
             {activeChannel?.type === "voice" && isActiveVoiceChannelJoined && (
               <ScreenShareStage
-                isLocalSharing={voice.isScreenSharing}
+                isLocalSharing={isNativeScreenSharing}
                 screenShares={voice.screenShares}
-                onStopLocalShare={voice.stopScreenShare}
+                onStopLocalShare={handleScreenShareAction}
               />
             )}
 
-            {activeChannel?.type === "text" && isMessagesLoading && (
+            {activeChannel && isMessagesLoading && (
               <div className="emptyHint">Загружаем сообщения...</div>
             )}
 
-            {activeChannel?.type === "text" &&
+            {activeChannel &&
               !isMessagesLoading &&
               !messages.length && (
                 <div className="emptyState">
@@ -1598,7 +1749,7 @@ function App() {
                 </div>
               )}
 
-            {activeChannel?.type === "text" &&
+            {activeChannel &&
               messages.map((message) => {
                 const isOwn = message.author_id === user.id;
                 const authorName = isOwn
@@ -1627,13 +1778,11 @@ function App() {
 
           <form className="messageInput" onSubmit={handleSendMessage}>
             <input
-              disabled={
-                !activeChannel || activeChannel.type !== "text" || isSending
-              }
+              disabled={!activeChannel || isSending}
               value={messageDraft}
               onChange={(event) => setMessageDraft(event.target.value)}
               placeholder={
-                activeChannel?.type === "text"
+                activeChannel
                   ? `Написать сообщение в #${activeChannel.name}`
                   : "Выберите текстовый канал"
               }
@@ -1641,7 +1790,6 @@ function App() {
             <button
               disabled={
                 !activeChannel ||
-                activeChannel.type !== "text" ||
                 !messageDraft.trim() ||
                 isSending
               }
@@ -1920,11 +2068,11 @@ function App() {
           channelName={voice.currentChannelName}
           remoteStreams={voice.remoteStreams}
           remoteVolumes={voice.remoteVolumes}
-          isScreenSharing={voice.isScreenSharing}
+          isScreenSharing={isNativeScreenSharing}
           onToggleMute={voice.toggleMute}
           onToggleScreenShare={handleScreenShareAction}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onLeave={voice.leaveVoice}
+          onLeave={handleLeaveVoice}
         />
       </div>
     </AppShell>

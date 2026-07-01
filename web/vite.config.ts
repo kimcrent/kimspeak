@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
+
+      watch: {
+        ignored: ["**/src-tauri/target/**"],
+      },
+
       proxy: {
         "/api": getApiProxy(env.VITE_API_BASE_URL),
       },
