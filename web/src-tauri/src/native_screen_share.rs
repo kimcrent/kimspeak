@@ -1,11 +1,15 @@
 use livekit::options::{TrackPublishOptions, VideoEncoding};
 use livekit::prelude::*;
+use livekit::webrtc::audio_frame::AudioFrame;
+use livekit::webrtc::audio_source::native::NativeAudioSource;
+use livekit::webrtc::audio_source::{AudioSourceOptions, RtcAudioSource};
 use livekit::webrtc::native::yuv_helper;
 use livekit::webrtc::video_frame::{I420Buffer, VideoBuffer, VideoFrame, VideoRotation};
 use livekit::webrtc::video_source::native::NativeVideoSource;
 use livekit::webrtc::video_source::{RtcVideoSource, VideoResolution};
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -198,8 +202,8 @@ pub async fn start_native_screen_share(
 
     let settings = normalize_settings(&request);
 
-    if settings.capture_audio {
-        println!("captureAudio=true requested, but WASAPI loopback is not implemented yet");
+    if settings.capture_audio && !cfg!(target_os = "windows") {
+        println!("captureAudio=true requested, but system audio capture is currently implemented only for Windows");
     }
 
     let previous = {
@@ -348,6 +352,74 @@ async fn run_livekit_screen_publisher(
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     #[cfg(target_os = "windows")]
+    let audio_task = if settings.capture_audio {
+        let audio_source = NativeAudioSource::new(
+            AudioSourceOptions::default(),
+            crate::screen_audio::SAMPLE_RATE,
+            crate::screen_audio::NUM_CHANNELS,
+            100,
+        );
+
+        let audio_track = LocalAudioTrack::create_audio_track(
+            "native_screen_share_audio",
+            RtcAudioSource::Native(audio_source.clone()),
+        );
+
+        room.local_participant()
+            .publish_track(
+                LocalTrack::Audio(audio_track),
+                TrackPublishOptions {
+                    source: TrackSource::ScreenshareAudio,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| format!("failed to publish native screen audio track: {error}"))?;
+
+        println!("Native screen audio track published to LiveKit");
+
+        let audio_stop_flag = stop_flag.clone();
+
+        Some(tauri::async_runtime::spawn(async move {
+            let mut audio_rx =
+                crate::screen_audio::spawn_system_audio_capture(audio_stop_flag.clone());
+
+            while let Some(samples) = audio_rx.recv().await {
+                if audio_stop_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let samples_per_channel = samples.len() as u32 / crate::screen_audio::NUM_CHANNELS;
+
+                if samples_per_channel == 0 {
+                    continue;
+                }
+
+                let frame = AudioFrame {
+                    data: Cow::Owned(samples),
+                    sample_rate: crate::screen_audio::SAMPLE_RATE,
+                    num_channels: crate::screen_audio::NUM_CHANNELS,
+                    samples_per_channel,
+                };
+
+                if let Err(error) = audio_source.capture_frame(&frame).await {
+                    eprintln!("failed to capture native screen audio frame: {error}");
+                    break;
+                }
+            }
+
+            audio_source.clear_buffer();
+
+            println!("Native screen audio task finished");
+        }))
+    } else {
+        None
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let audio_task: Option<JoinHandle<()>> = None;
+
+    #[cfg(target_os = "windows")]
     let capture_task = {
         let capture_request = request.clone();
         let capture_settings = settings.clone();
@@ -385,6 +457,10 @@ async fn run_livekit_screen_publisher(
     }
 
     stop_flag.store(true, Ordering::SeqCst);
+
+    if let Some(audio_task) = audio_task {
+        audio_task.abort();
+    }
 
     events_task.abort();
 

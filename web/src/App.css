@@ -181,6 +181,20 @@ input:disabled {
   font-weight: 800;
 }
 
+.authForm .rememberLogin {
+  flex-direction: row;
+  align-items: center;
+  color: #d7d9df;
+  font-size: 12px;
+}
+
+.rememberLogin input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  accent-color: var(--ks-red);
+}
+
 .authForm input,
 .messageInput input {
   min-width: 0;
@@ -493,6 +507,102 @@ input:disabled {
   gap: 10px;
   padding: 10px;
   background: #232428;
+}
+
+.voiceDock {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: #232428;
+}
+
+.voiceDock--error .voiceDockStatus {
+  color: #ffb0b0;
+}
+
+.voiceDockStatus {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 8px;
+  color: #b8f7c5;
+}
+
+.voiceDockSignal {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #303238;
+  color: inherit;
+  font-weight: 900;
+}
+
+.voiceDockText {
+  min-width: 0;
+}
+
+.voiceDockText strong,
+.voiceDockText span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voiceDockText strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.voiceDockText span {
+  margin-top: 2px;
+  color: #949ba4;
+  font-size: 12px;
+}
+
+.voiceDockIcon,
+.voiceDockButton {
+  border: 0;
+  border-radius: 6px;
+  background: #303238;
+  color: #f4f5f7;
+  font-weight: 900;
+}
+
+.voiceDockIcon {
+  width: 30px;
+  height: 30px;
+}
+
+.voiceDockActions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.voiceDockButton {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.voiceDockIcon:hover,
+.voiceDockButton:hover {
+  background: #3b3e46;
+  color: #ffffff;
+}
+
+.voiceDockButton.active {
+  background: var(--ks-red);
+  color: #ffffff;
+}
+
+.voiceDockButton.danger.active {
+  background: rgba(255, 90, 90, 0.2);
+  color: #ffb0b0;
 }
 
 .profileInfo {
@@ -1845,8 +1955,81 @@ input:focus-visible {
 }
 
 .screenShareTile.fullscreen .screenShareVideo {
-  height: calc(100vh - 48px);
+  height: 100vh;
   aspect-ratio: auto;
+}
+
+.screenShareTile.fullscreen .screenShareCaption {
+  display: none;
+}
+
+.screenFullscreenBar {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(22, 23, 27, 0.92);
+  color: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  backdrop-filter: blur(14px);
+}
+
+.screenFullscreenBar.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.screenFullscreenTitle {
+  min-width: 0;
+}
+
+.screenFullscreenTitle strong,
+.screenFullscreenTitle span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screenFullscreenTitle span {
+  margin-top: 2px;
+  color: #aeb3bc;
+  font-size: 12px;
+}
+
+.screenFullscreenActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.screenFullscreenActions button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #303238;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.screenFullscreenActions button:hover {
+  background: var(--ks-red);
 }
 
 .screenShareVideo {
@@ -2247,6 +2430,30 @@ input:focus-visible {
   color: #f1f2f4;
 }
 
+.settingsSelect {
+  display: grid;
+  gap: 8px;
+  color: #dfe1e6;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settingsSelect select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #343741;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #1b1d23;
+  color: #f4f5f7;
+  outline: none;
+}
+
+.settingsSelect select:focus {
+  border-color: var(--ks-red-line);
+  box-shadow: 0 0 0 3px var(--ks-red-soft);
+}
+
 .settingsToggles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2271,6 +2478,73 @@ input:focus-visible {
   width: 16px;
   height: 16px;
   accent-color: var(--ks-red);
+}
+
+.settingsSlider--vad small {
+  color: #8f96a3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vadMonitorPanel {
+  display: grid;
+  gap: 8px;
+}
+
+.vadLevelMeter {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid #343741;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(127, 141, 255, 0.12), rgba(255, 78, 78, 0.16)),
+    #17191f;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.35);
+}
+
+.vadLevelMeterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--mic-level, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4cc9f0, var(--ks-red));
+  opacity: 0.5;
+  box-shadow: 0 0 18px rgba(127, 141, 255, 0.32);
+  transition: width 0.08s linear, opacity 0.12s ease;
+}
+
+.vadLevelMeter.open .vadLevelMeterFill {
+  opacity: 0.88;
+}
+
+.vadLevelMeterThreshold {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: var(--vad-threshold, 34%);
+  width: 2px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(127, 141, 255, 0.3);
+}
+
+.vadLevelMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #aeb3bc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.vadLevelMeta b {
+  color: #ffb0b0;
+}
+
+.vadLevelMeter.open + .vadLevelMeta b {
+  color: #b8f7c5;
 }
 
 .screenPickerBackdrop {

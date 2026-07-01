@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import "./App.css";
 import {
   acceptGuildInvitation,
@@ -59,12 +59,16 @@ type VoiceUserMenu = {
 type AppSettingsModalProps = {
   voiceSettings: VoiceSettings;
   isConnected: boolean;
+  audioDevices: MediaDeviceInfo[];
+  microphoneLevel: number;
+  isMicrophoneGateOpen: boolean;
   onClose: () => void;
   onToggleMute: () => void;
   onUpdateVoiceSettings: (patch: Partial<VoiceSettings>) => void;
 };
 
 const TOKEN_KEY = "kimspeak_token";
+const REMEMBER_CREDENTIALS_KEY = "kimspeak_remember_credentials";
 
 type AppShellProps = {
   children: ReactNode;
@@ -130,13 +134,20 @@ function getRoleLabel(role: ChannelMember["role"]) {
   return "Участник";
 }
 
+/*
 function AppSettingsModal({
   voiceSettings,
   isConnected,
+  audioDevices,
+  microphoneLevel,
+  isMicrophoneGateOpen,
   onClose,
   onToggleMute,
   onUpdateVoiceSettings,
 }: AppSettingsModalProps) {
+  const inputDevices = audioDevices.filter((device) => device.kind === "audioinput");
+  const outputDevices = audioDevices.filter((device) => device.kind === "audiooutput");
+
   return (
     <div
       className="modalBackdrop settingsBackdrop"
@@ -170,6 +181,88 @@ function AppSettingsModal({
           </nav>
 
           <div className="settingsContent">
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Ð£ÑÑ‚Ñ€Ð¾Ð¹ÑÑ‚Ð²Ð°</h3>
+                <span>{inputDevices.length + outputDevices.length || "auto"}</span>
+              </div>
+
+              <label className="settingsSelect">
+                <span>Ð’Ñ…Ð¾Ð´Ð½Ð¾Ðµ ÑƒÑÑ‚Ñ€Ð¾Ð¹ÑÑ‚Ð²Ð¾</span>
+                <select
+                  value={voiceSettings.inputDeviceId}
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ inputDeviceId: event.target.value })
+                  }
+                >
+                  <option value="">Ð¡Ð¸ÑÑ‚ÐµÐ¼Ð½Ñ‹Ð¹ Ð¼Ð¸ÐºÑ€Ð¾Ñ„Ð¾Ð½</option>
+                  {inputDevices.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `ÐœÐ¸ÐºÑ€Ð¾Ñ„Ð¾Ð½ ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="settingsSelect">
+                <span>Ð’Ñ‹Ñ…Ð¾Ð´Ð½Ð¾Ðµ ÑƒÑÑ‚Ñ€Ð¾Ð¹ÑÑ‚Ð²Ð¾</span>
+                <select
+                  value={voiceSettings.outputDeviceId}
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ outputDeviceId: event.target.value })
+                  }
+                >
+                  <option value="">Ð¡Ð¸ÑÑ‚ÐµÐ¼Ð½Ñ‹Ð¹ Ð²Ñ‹Ñ…Ð¾Ð´</option>
+                  {outputDevices.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Ð”Ð¸Ð½Ð°Ð¼Ð¸ÐºÐ¸ ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="settingsSlider">
+                <span>
+                  ÐŸÐ¾Ñ€Ð¾Ð³ ÑÑ€Ð°Ð±Ð°Ñ‚Ñ‹Ð²Ð°Ð½Ð¸Ñ{" "}
+                  {Math.round(voiceSettings.vadThreshold * 100)}%
+                </span>
+                <input
+                  max="1"
+                  min="0"
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({
+                      vadThreshold: Number(event.target.value),
+                    })
+                  }
+                  step="0.01"
+                  type="range"
+                  value={voiceSettings.vadThreshold}
+                />
+              </label>
+
+              <div className="vadMonitorPanel">
+                <div
+                  className={
+                    isMicrophoneGateOpen
+                      ? "vadLevelMeter open"
+                      : "vadLevelMeter"
+                  }
+                  style={vadMeterStyle}
+                >
+                  <span className="vadLevelMeterFill" />
+                  <span className="vadLevelMeterThreshold" />
+                </div>
+                <div className="vadLevelMeta">
+                  <span>Уровень {Math.round(microphoneLevel * 100)}%</span>
+                  <b>
+                    {isMicrophoneGateOpen
+                      ? "Микрофон открыт"
+                      : "Шум отсекается"}
+                  </b>
+                </div>
+              </div>
+            </section>
+
             <section className="settingsGroup">
               <div className="settingsGroupHeader">
                 <h3>Микрофон</h3>
@@ -285,6 +378,240 @@ function AppSettingsModal({
   );
 }
 
+*/
+
+function VoiceSettingsModal({
+  voiceSettings,
+  isConnected,
+  audioDevices,
+  microphoneLevel,
+  isMicrophoneGateOpen,
+  onClose,
+  onToggleMute,
+  onUpdateVoiceSettings,
+}: AppSettingsModalProps) {
+  const inputDevices = audioDevices.filter((device) => device.kind === "audioinput");
+  const outputDevices = audioDevices.filter((device) => device.kind === "audiooutput");
+  const vadMeterStyle = {
+    "--mic-level": `${Math.min(100, Math.round(microphoneLevel * 100))}%`,
+    "--vad-threshold": `${Math.round(voiceSettings.vadThreshold * 100)}%`,
+  } as CSSProperties;
+
+  return (
+    <div
+      className="modalBackdrop settingsBackdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section className="settingsModal" aria-modal="true" role="dialog">
+        <header className="settingsHeader">
+          <div>
+            <h2>Настройки</h2>
+            <span>{isConnected ? "Голос активен" : "Голос не подключён"}</span>
+          </div>
+          <button
+            className="settingsClose"
+            onClick={onClose}
+            type="button"
+            title="Закрыть"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="settingsLayout">
+          <nav className="settingsNav" aria-label="Разделы настроек">
+            <button className="active" type="button">
+              Голос
+            </button>
+          </nav>
+
+          <div className="settingsContent">
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Устройства</h3>
+                <span>{inputDevices.length + outputDevices.length || "auto"}</span>
+              </div>
+
+              <label className="settingsSelect">
+                <span>Входящее устройство</span>
+                <select
+                  value={voiceSettings.inputDeviceId}
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ inputDeviceId: event.target.value })
+                  }
+                >
+                  <option value="">Системный микрофон</option>
+                  {inputDevices.map((device, index) => (
+                    <option key={device.deviceId || index} value={device.deviceId}>
+                      {device.label || `Микрофон ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="settingsSelect">
+                <span>Исходящее устройство</span>
+                <select
+                  value={voiceSettings.outputDeviceId}
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ outputDeviceId: event.target.value })
+                  }
+                >
+                  <option value="">Системный выход</option>
+                  {outputDevices.map((device, index) => (
+                    <option key={device.deviceId || index} value={device.deviceId}>
+                      {device.label || `Динамики ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Микрофон</h3>
+                <span>{voiceSettings.muted ? "Выключен" : "Включён"}</span>
+              </div>
+
+              <button
+                className={voiceSettings.muted ? "settingSwitch" : "settingSwitch enabled"}
+                onClick={onToggleMute}
+                type="button"
+              >
+                <span>Микрофон</span>
+                <b>{voiceSettings.muted ? "off" : "on"}</b>
+              </button>
+
+              <label className="settingsSlider">
+                <span>
+                  Громкость микрофона {Math.round(voiceSettings.inputGain * 100)}%
+                </span>
+                <input
+                  max="2"
+                  min="0"
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ inputGain: Number(event.target.value) })
+                  }
+                  step="0.05"
+                  type="range"
+                  value={voiceSettings.inputGain}
+                />
+              </label>
+
+              <label className="settingsSlider settingsSlider--vad">
+                <span>
+                  Порог срабатывания микрофона{" "}
+                  {Math.round(voiceSettings.vadThreshold * 100)}%
+                </span>
+                <input
+                  max="1"
+                  min="0"
+                  onChange={(event) =>
+                    onUpdateVoiceSettings({ vadThreshold: Number(event.target.value) })
+                  }
+                  step="0.01"
+                  type="range"
+                  value={voiceSettings.vadThreshold}
+                />
+                <small>Передача голоса включается только при достаточной громкости.</small>
+              </label>
+            </section>
+
+            <section className="settingsGroup">
+              <div className="settingsGroupHeader">
+                <h3>Обработка звука</h3>
+              </div>
+
+              <div className="vadMonitorPanel">
+                <div
+                  className={
+                    isMicrophoneGateOpen
+                      ? "vadLevelMeter open"
+                      : "vadLevelMeter"
+                  }
+                  style={vadMeterStyle}
+                >
+                  <span className="vadLevelMeterFill" />
+                  <span className="vadLevelMeterThreshold" />
+                </div>
+                <div className="vadLevelMeta">
+                  <span>Уровень {Math.round(microphoneLevel * 100)}%</span>
+                  <b>
+                    {isMicrophoneGateOpen
+                      ? "Микрофон открыт"
+                      : "Шум отсекается"}
+                  </b>
+                </div>
+              </div>
+
+              <div className="settingsToggles">
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.noiseSuppression}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({ noiseSuppression: event.target.checked })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Шумоподавление</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.echoCancellation}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({ echoCancellation: event.target.checked })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Подавление эха</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.autoGainControl}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({ autoGainControl: event.target.checked })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Автоматическая регулировка усиления</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.typingAttenuation}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({ typingAttenuation: event.target.checked })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Затухание при наборе текста</span>
+                </label>
+
+                <label className="settingsToggle">
+                  <input
+                    checked={voiceSettings.comfortNoise}
+                    onChange={(event) =>
+                      onUpdateVoiceSettings({ comfortNoise: event.target.checked })
+                    }
+                    type="checkbox"
+                  />
+                  <span>Комфортный шум</span>
+                </label>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const voice = useVoiceRoom();
 
@@ -292,6 +619,7 @@ function App() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberCredentials, setRememberCredentials] = useState(false);
 
   const [token, setToken] = useState(
     () => localStorage.getItem(TOKEN_KEY) || "",
@@ -316,6 +644,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isScreenSharePickerOpen, setIsScreenSharePickerOpen] = useState(false);
   const [isNativeScreenSharing, setIsNativeScreenSharing] = useState(false);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [voiceUserMenu, setVoiceUserMenu] = useState<VoiceUserMenu>(null);
 
   const [status, setStatus] = useState("Готов к работе");
@@ -388,6 +717,23 @@ function App() {
     : undefined;
 
   useEffect(() => {
+    const savedCredentials = localStorage.getItem(REMEMBER_CREDENTIALS_KEY);
+
+    if (savedCredentials) {
+      try {
+        const parsed = JSON.parse(savedCredentials) as {
+          email?: string;
+          password?: string;
+        };
+
+        setEmail(parsed.email || "");
+        setPassword(parsed.password || "");
+        setRememberCredentials(Boolean(parsed.email || parsed.password));
+      } catch {
+        localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
+      }
+    }
+
     const savedToken = localStorage.getItem(TOKEN_KEY);
 
     if (!savedToken) {
@@ -441,6 +787,14 @@ function App() {
     if (!isSettingsOpen) {
       return;
     }
+
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then(setAudioDevices)
+      .catch((err) => {
+        console.error("Failed to enumerate audio devices", err);
+        setAudioDevices([]);
+      });
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -791,6 +1145,14 @@ function App() {
       }
 
       localStorage.setItem(TOKEN_KEY, receivedToken);
+      if (rememberCredentials) {
+        localStorage.setItem(
+          REMEMBER_CREDENTIALS_KEY,
+          JSON.stringify({ email, password }),
+        );
+      } else {
+        localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
+      }
       setToken(receivedToken);
       setUser(response.user);
       setStatus("Вход выполнен успешно");
@@ -1344,6 +1706,19 @@ function App() {
                 />
               </label>
 
+              {mode === "login" && (
+                <label className="rememberLogin">
+                  <input
+                    checked={rememberCredentials}
+                    onChange={(event) =>
+                      setRememberCredentials(event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>Запомнить логин и пароль</span>
+                </label>
+              )}
+
               <button className="submitButton" disabled={isLoading}>
                 {isLoading
                   ? "Отправляем..."
@@ -1635,6 +2010,80 @@ function App() {
             </div>
           </div>
 
+          {voice.state !== "idle" && (
+            <div
+              className={
+                voice.state === "error" ? "voiceDock voiceDock--error" : "voiceDock"
+              }
+            >
+              <div className="voiceDockStatus">
+                <div className="voiceDockSignal">≋</div>
+                <div className="voiceDockText">
+                  <strong>
+                    {voice.state === "connected"
+                      ? "Голосовая связь подключена"
+                      : voice.state === "connecting"
+                        ? "Подключаемся к голосу"
+                        : "Ошибка голосовой связи"}
+                  </strong>
+                  <span>{voice.currentChannelName || "Голосовой канал"}</span>
+                </div>
+                <button
+                  className="voiceDockIcon"
+                  onClick={handleLeaveVoice}
+                  title="Отключиться"
+                  type="button"
+                >
+                  ⏏
+                </button>
+              </div>
+
+              <div className="voiceDockActions">
+                <button
+                  className={voice.muted ? "voiceDockButton danger active" : "voiceDockButton"}
+                  onClick={voice.toggleMute}
+                  title={voice.muted ? "Включить микрофон" : "Выключить микрофон"}
+                  type="button"
+                >
+                  {voice.muted ? "mic off" : "mic"}
+                </button>
+                <button
+                  className={
+                    isNativeScreenSharing
+                      ? "voiceDockButton active"
+                      : "voiceDockButton"
+                  }
+                  disabled={voice.state !== "connected"}
+                  onClick={handleScreenShareAction}
+                  title={
+                    isNativeScreenSharing
+                      ? "Остановить трансляцию"
+                      : "Начать трансляцию"
+                  }
+                  type="button"
+                >
+                  screen
+                </button>
+                <button
+                  className="voiceDockButton"
+                  onClick={() => setIsSettingsOpen(true)}
+                  title="Настройки голоса"
+                  type="button"
+                >
+                  ⚙
+                </button>
+                <button
+                  className="voiceDockButton"
+                  onClick={handleLeaveVoice}
+                  title="Выйти из канала"
+                  type="button"
+                >
+                  phone
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="profilePanel">
             <div className="profileAvatar">{getInitial(user.username)}</div>
             <div className="profileInfo">
@@ -1731,8 +2180,11 @@ function App() {
             {activeChannel?.type === "voice" && isActiveVoiceChannelJoined && (
               <ScreenShareStage
                 isLocalSharing={isNativeScreenSharing}
+                muted={voice.muted}
                 screenShares={voice.screenShares}
+                onOpenSettings={() => setIsSettingsOpen(true)}
                 onStopLocalShare={handleScreenShareAction}
+                onToggleMute={voice.toggleMute}
               />
             )}
 
@@ -2005,9 +2457,12 @@ function App() {
         )}
 
         {isSettingsOpen && (
-          <AppSettingsModal
+          <VoiceSettingsModal
             voiceSettings={voice.voiceSettings}
             isConnected={voice.state === "connected"}
+            audioDevices={audioDevices}
+            microphoneLevel={voice.microphoneLevel}
+            isMicrophoneGateOpen={voice.isMicrophoneGateOpen}
             onClose={() => setIsSettingsOpen(false)}
             onToggleMute={voice.toggleMute}
             onUpdateVoiceSettings={voice.updateVoiceSettings}
@@ -2061,18 +2516,9 @@ function App() {
         )}
 
         <VoicePanel
-          state={voice.state}
-          error={voice.error}
-          muted={voice.muted}
-          voiceSettings={voice.voiceSettings}
-          channelName={voice.currentChannelName}
           remoteStreams={voice.remoteStreams}
           remoteVolumes={voice.remoteVolumes}
-          isScreenSharing={isNativeScreenSharing}
-          onToggleMute={voice.toggleMute}
-          onToggleScreenShare={handleScreenShareAction}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onLeave={handleLeaveVoice}
+          outputDeviceId={voice.voiceSettings.outputDeviceId}
         />
       </div>
     </AppShell>

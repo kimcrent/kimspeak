@@ -3,19 +3,51 @@ import type { ScreenShareElement } from "./useVoiceRoom";
 
 type ScreenShareStageProps = {
   isLocalSharing: boolean;
+  muted: boolean;
   screenShares: ScreenShareElement[];
+  onOpenSettings: () => void;
   onStopLocalShare: () => void;
+  onToggleMute: () => void;
 };
 
 export function ScreenShareStage({
   isLocalSharing,
+  muted,
   screenShares,
+  onOpenSettings,
   onStopLocalShare,
+  onToggleMute,
 }: ScreenShareStageProps) {
   const tileRefs = useRef(new Map<string, HTMLElement>());
   const videoHostRefs = useRef(new Map<string, HTMLDivElement>());
+  const fullscreenHideTimerRef = useRef<number | null>(null);
   const [selectedShareId, setSelectedShareId] = useState("");
   const [fullscreenShareId, setFullscreenShareId] = useState("");
+  const [isFullscreenControlsVisible, setIsFullscreenControlsVisible] =
+    useState(false);
+
+  const showFullscreenControls = () => {
+    setIsFullscreenControlsVisible(true);
+
+    if (fullscreenHideTimerRef.current) {
+      window.clearTimeout(fullscreenHideTimerRef.current);
+    }
+
+    fullscreenHideTimerRef.current = window.setTimeout(() => {
+      setIsFullscreenControlsVisible(false);
+    }, 2400);
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } finally {
+      setFullscreenShareId("");
+      setIsFullscreenControlsVisible(false);
+    }
+  };
 
   const requestFullscreen = async (shareId: string) => {
     const node = tileRefs.current.get(shareId);
@@ -30,8 +62,11 @@ export function ScreenShareStage({
       }
 
       await node.requestFullscreen();
+      setFullscreenShareId(shareId);
+      showFullscreenControls();
     } catch {
       setFullscreenShareId(shareId);
+      showFullscreenControls();
     }
   };
 
@@ -61,6 +96,9 @@ export function ScreenShareStage({
     const syncFullscreen = () => {
       if (!document.fullscreenElement) {
         setFullscreenShareId("");
+        setIsFullscreenControlsVisible(false);
+      } else {
+        showFullscreenControls();
       }
     };
 
@@ -68,6 +106,9 @@ export function ScreenShareStage({
 
     return () => {
       document.removeEventListener("fullscreenchange", syncFullscreen);
+      if (fullscreenHideTimerRef.current) {
+        window.clearTimeout(fullscreenHideTimerRef.current);
+      }
     };
   }, []);
 
@@ -129,6 +170,11 @@ export function ScreenShareStage({
                 }
                 key={share.id}
                 onClick={() => setSelectedShareId(share.id)}
+                onMouseMove={() => {
+                  if (fullscreenShareId === share.id) {
+                    showFullscreenControls();
+                  }
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -165,6 +211,37 @@ export function ScreenShareStage({
                     Во весь экран
                   </button>
                 </div>
+                {fullscreenShareId === share.id && (
+                  <div
+                    className={
+                      isFullscreenControlsVisible
+                        ? "screenFullscreenBar visible"
+                        : "screenFullscreenBar"
+                    }
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="screenFullscreenTitle">
+                      <strong>{share.username || share.userId}</strong>
+                      <span>Текущая трансляция</span>
+                    </div>
+                    <div className="screenFullscreenActions">
+                      <button onClick={onToggleMute} type="button">
+                        {muted ? "Включить микрофон" : "Выключить микрофон"}
+                      </button>
+                      {isLocalSharing && (
+                        <button onClick={onStopLocalShare} type="button">
+                          Остановить экран
+                        </button>
+                      )}
+                      <button onClick={onOpenSettings} type="button">
+                        Настройки
+                      </button>
+                      <button onClick={exitFullscreen} type="button">
+                        Выйти из полноэкранного режима
+                      </button>
+                    </div>
+                  </div>
+                )}
               </article>
             );
           })}

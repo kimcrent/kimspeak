@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ConnectionState,
+  LocalAudioTrack,
   RemoteParticipant,
   RemoteTrack,
   Room,
@@ -13,11 +14,16 @@ export type VoiceState = "idle" | "connecting" | "connected" | "error";
 
 export type VoiceSettings = {
   muted: boolean;
+  inputDeviceId: string;
+  outputDeviceId: string;
   inputGain: number;
+  vadThreshold: number;
+  bitrateKbps: number;
   noiseSuppression: boolean;
   echoCancellation: boolean;
   autoGainControl: boolean;
-  bitrateKbps: number;
+  typingAttenuation: boolean;
+  comfortNoise: boolean;
 };
 
 export type ScreenShareSourceType = "application" | "screen" | "device";
@@ -55,6 +61,20 @@ export type ScreenShareElement = {
   element: HTMLMediaElement;
 };
 
+type MicrophoneMonitor = {
+  audioContext: AudioContext;
+  analyser: AnalyserNode;
+  dataArray: Uint8Array;
+  gateOpen: boolean;
+  gateUntil: number;
+  level: number;
+  monitorTrack: MediaStreamTrack;
+  noiseFloor: number;
+  rafId: number;
+  source: MediaStreamAudioSourceNode;
+  sourceTrackId: string;
+};
+
 type JoinVoiceArgs = {
   authToken: string;
   channelId: string;
@@ -66,12 +86,33 @@ type JoinVoiceArgs = {
 
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   muted: false,
+  inputDeviceId: "",
+  outputDeviceId: "",
   inputGain: 1,
+  vadThreshold: 0.34,
+  bitrateKbps: 64,
   noiseSuppression: true,
   echoCancellation: true,
-  autoGainControl: true,
-  bitrateKbps: 64,
+  autoGainControl: false,
+  typingAttenuation: false,
+  comfortNoise: false,
 };
+
+const VAD_HOLD_MS = 260;
+const VAD_CLOSE_RATIO = 0.72;
+
+function getMicrophoneOptions(settings: VoiceSettings) {
+  return {
+    echoCancellation: settings.echoCancellation,
+    noiseSuppression: settings.noiseSuppression,
+    autoGainControl: settings.autoGainControl,
+    channelCount: { ideal: 1 },
+    sampleRate: { ideal: 48_000 },
+    deviceId: settings.inputDeviceId
+      ? { exact: settings.inputDeviceId }
+      : undefined,
+  };
+}
 
 function getParticipantName(participant: RemoteParticipant) {
   return participant.name || participant.identity;
@@ -79,6 +120,10 @@ function getParticipantName(participant: RemoteParticipant) {
 
 function isScreenParticipant(participant: RemoteParticipant) {
   return participant.identity.endsWith(":screen");
+}
+
+function getScreenOwnerIdentity(identity: string) {
+  return identity.endsWith(":screen") ? identity.slice(0, -":screen".length) : identity;
 }
 
 function getParticipantMuted(participant: RemoteParticipant) {
@@ -92,6 +137,8 @@ export function useVoiceRoom() {
   const audioElementsRef = useRef(new Map<string, RemoteAudioElement>());
   const screenShareElementsRef = useRef(new Map<string, ScreenShareElement>());
   const remoteVolumesRef = useRef<Record<string, number>>({});
+  const microphoneMonitorRef = useRef<MicrophoneMonitor | null>(null);
+  const voiceSettingsRef = useRef(DEFAULT_VOICE_SETTINGS);
 
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState("");
@@ -102,8 +149,132 @@ export function useVoiceRoom() {
   const [remoteStreams, setRemoteStreams] = useState<RemoteAudioElement[]>([]);
   const [screenShares, setScreenShares] = useState<ScreenShareElement[]>([]);
   const [remoteVolumes, setRemoteVolumes] = useState<Record<string, number>>({});
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
+  const [isMicrophoneGateOpen, setIsMicrophoneGateOpen] = useState(false);
 
   const muted = voiceSettings.muted;
+
+  useEffect(() => {
+    voiceSettingsRef.current = voiceSettings;
+  }, [voiceSettings]);
+
+  const stopMicrophoneMonitor = useCallback(() => {
+    const monitor = microphoneMonitorRef.current;
+
+    if (!monitor) {
+      return;
+    }
+
+    window.cancelAnimationFrame(monitor.rafId);
+    monitor.source.disconnect();
+    monitor.monitorTrack.stop();
+    void monitor.audioContext.close();
+    microphoneMonitorRef.current = null;
+    setMicrophoneLevel(0);
+    setIsMicrophoneGateOpen(false);
+  }, []);
+
+  const startMicrophoneMonitor = useCallback(
+    (localTrack: LocalAudioTrack) => {
+      const sendTrack = localTrack.mediaStreamTrack;
+      const currentMonitor = microphoneMonitorRef.current;
+
+      if (currentMonitor?.sourceTrackId === sendTrack.id) {
+        return;
+      }
+
+      stopMicrophoneMonitor();
+
+      const audioWindow = window as Window & {
+        webkitAudioContext?: typeof AudioContext;
+      };
+      const AudioContextConstructor =
+        globalThis.AudioContext || audioWindow.webkitAudioContext;
+
+      if (!AudioContextConstructor) {
+        return;
+      }
+
+      const audioContext = new AudioContextConstructor({
+        latencyHint: "interactive",
+      });
+      const monitorTrack = sendTrack.clone();
+      const source = audioContext.createMediaStreamSource(
+        new MediaStream([monitorTrack]),
+      );
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.38;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.fftSize);
+      const monitor: MicrophoneMonitor = {
+        audioContext,
+        analyser,
+        dataArray,
+        gateOpen: false,
+        gateUntil: 0,
+        level: 0,
+        monitorTrack,
+        noiseFloor: 0.03,
+        rafId: 0,
+        source,
+        sourceTrackId: sendTrack.id,
+      };
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(dataArray);
+
+        let sum = 0;
+        for (const sample of dataArray) {
+          const normalized = (sample - 128) / 128;
+          sum += normalized * normalized;
+        }
+
+        const rms = Math.sqrt(sum / dataArray.length);
+        const level = Math.min(1, rms * voiceSettingsRef.current.inputGain * 4.8);
+        const settings = voiceSettingsRef.current;
+        if (!monitor.gateOpen && level < 0.75) {
+          monitor.noiseFloor = monitor.noiseFloor * 0.96 + level * 0.04;
+        }
+        const openThreshold = Math.max(
+          settings.vadThreshold,
+          Math.min(0.82, monitor.noiseFloor + 0.12),
+        );
+        const closeThreshold = Math.max(0.01, openThreshold * VAD_CLOSE_RATIO);
+        const now = performance.now();
+        const shouldOpen = !settings.muted && level >= openThreshold;
+
+        if (shouldOpen) {
+          monitor.gateUntil = now + VAD_HOLD_MS;
+        }
+
+        const isGateOpen =
+          !settings.muted &&
+          (level >= closeThreshold || now < monitor.gateUntil);
+
+        if (sendTrack.readyState === "live") {
+          sendTrack.enabled = isGateOpen;
+        }
+
+        if (Math.abs(monitor.level - level) > 0.01) {
+          monitor.level = level;
+          setMicrophoneLevel(level);
+        }
+        if (monitor.gateOpen !== isGateOpen) {
+          monitor.gateOpen = isGateOpen;
+          setIsMicrophoneGateOpen(isGateOpen);
+        }
+
+        monitor.rafId = window.requestAnimationFrame(tick);
+      };
+
+      microphoneMonitorRef.current = monitor;
+      void audioContext.resume();
+      tick();
+    },
+    [stopMicrophoneMonitor],
+  );
 
   const refreshParticipants = useCallback(() => {
     const room = roomRef.current;
@@ -166,6 +337,8 @@ export function useVoiceRoom() {
   const leaveVoice = useCallback(() => {
     const room = roomRef.current;
 
+    stopMicrophoneMonitor();
+
     audioElementsRef.current.forEach((item) => {
       item.element.pause();
       item.element.remove();
@@ -191,7 +364,7 @@ export function useVoiceRoom() {
     setVoiceUsers([]);
     setError("");
     setState("idle");
-  }, []);
+  }, [stopMicrophoneMonitor]);
 
   const updateVoiceSettings = useCallback(
     (patch: Partial<VoiceSettings>) => {
@@ -199,12 +372,26 @@ export function useVoiceRoom() {
         const next = { ...current, ...patch };
         const room = roomRef.current;
 
-        if (room && patch.muted !== undefined && patch.muted !== current.muted) {
+        const shouldRefreshMicrophone =
+          patch.muted !== undefined ||
+          patch.inputDeviceId !== undefined ||
+          patch.noiseSuppression !== undefined ||
+          patch.echoCancellation !== undefined ||
+          patch.autoGainControl !== undefined;
+
+        if (room && shouldRefreshMicrophone) {
           room.localParticipant
-            .setMicrophoneEnabled(!patch.muted, {
-              echoCancellation: next.echoCancellation,
-              noiseSuppression: next.noiseSuppression,
-              autoGainControl: next.autoGainControl,
+            .setMicrophoneEnabled(!next.muted, getMicrophoneOptions(next))
+            .then((publication) => {
+              if (next.muted) {
+                stopMicrophoneMonitor();
+                return;
+              }
+
+              const localTrack = publication?.track;
+              if (localTrack instanceof LocalAudioTrack) {
+                startMicrophoneMonitor(localTrack);
+              }
             })
             .catch((err) => {
               setError(
@@ -218,7 +405,7 @@ export function useVoiceRoom() {
         return next;
       });
     },
-    [],
+    [startMicrophoneMonitor, stopMicrophoneMonitor],
   );
 
   const toggleMute = useCallback(() => {
@@ -296,6 +483,16 @@ export function useVoiceRoom() {
           return;
         }
 
+        const currentUser = currentUserRef.current;
+        const isOwnScreenAudio =
+          track.source === Track.Source.ScreenShareAudio &&
+          currentUser?.id === getScreenOwnerIdentity(participant.identity);
+
+        if (isOwnScreenAudio) {
+          track.detach().forEach((element) => element.remove());
+          return;
+        }
+
         const element = track.attach();
         const volume = remoteVolumesRef.current[participant.identity] ?? 1;
         element.autoplay = true;
@@ -339,14 +536,15 @@ export function useVoiceRoom() {
         );
 
         await room.connect(voiceToken.url, voiceToken.token);
-        await room.localParticipant.setMicrophoneEnabled(
+        const microphonePublication = await room.localParticipant.setMicrophoneEnabled(
           !voiceSettings.muted,
-          {
-            echoCancellation: voiceSettings.echoCancellation,
-            noiseSuppression: voiceSettings.noiseSuppression,
-            autoGainControl: voiceSettings.autoGainControl,
-          },
+          getMicrophoneOptions(voiceSettings),
         );
+
+        const localTrack = microphonePublication?.track;
+        if (!voiceSettings.muted && localTrack instanceof LocalAudioTrack) {
+          startMicrophoneMonitor(localTrack);
+        }
 
         if (room.state === ConnectionState.Connected) {
           setState("connected");
@@ -368,6 +566,7 @@ export function useVoiceRoom() {
       detachRemoteTrack,
       leaveVoice,
       refreshParticipants,
+      startMicrophoneMonitor,
       voiceSettings,
     ],
   );
@@ -390,6 +589,8 @@ export function useVoiceRoom() {
       remoteStreams,
       screenShares,
       remoteVolumes,
+      microphoneLevel,
+      isMicrophoneGateOpen,
       joinVoice,
       leaveVoice,
       toggleMute,
@@ -403,9 +604,11 @@ export function useVoiceRoom() {
       joinVoice,
       leaveVoice,
       muted,
+      microphoneLevel,
       remoteStreams,
       remoteVolumes,
       screenShares,
+      isMicrophoneGateOpen,
       state,
       toggleMute,
       updateRemoteVolume,

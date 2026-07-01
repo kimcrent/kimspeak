@@ -1,4 +1,5 @@
 mod native_screen_share;
+mod screen_audio;
 
 use native_screen_share::{
     list_capture_sources, start_native_screen_share, stop_native_screen_share,
@@ -34,12 +35,15 @@ async fn api_request(request: ApiRequest) -> Result<ApiResponse, String> {
         .method
         .parse::<reqwest::Method>()
         .map_err(|err| format!("invalid method: {err}"))?;
+
     let base_url = request.base_url.trim_end_matches('/');
+
     let path = if request.path.starts_with('/') {
         request.path
     } else {
         format!("/{}", request.path)
     };
+
     let url = format!("{base_url}{path}");
 
     let client = reqwest::Client::new();
@@ -48,6 +52,7 @@ async fn api_request(request: ApiRequest) -> Result<ApiResponse, String> {
     for (key, value) in request.headers {
         let name = reqwest::header::HeaderName::from_bytes(key.as_bytes())
             .map_err(|err| format!("invalid header name {key}: {err}"))?;
+
         let value = reqwest::header::HeaderValue::from_str(&value)
             .map_err(|err| format!("invalid header value for {key}: {err}"))?;
 
@@ -62,12 +67,15 @@ async fn api_request(request: ApiRequest) -> Result<ApiResponse, String> {
         .send()
         .await
         .map_err(|err| format!("request failed: {err}"))?;
+
     let status = response.status();
+
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
+
     let text = response
         .text()
         .await
@@ -99,6 +107,7 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
             Ok(())
         })
         .run(tauri::generate_context!())
