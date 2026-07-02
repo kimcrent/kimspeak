@@ -2026,7 +2026,9 @@ function App() {
                         ? "Подключаемся к голосу"
                         : "Ошибка голосовой связи"}
                   </strong>
-                  <span>{voice.currentChannelName || "Голосовой канал"}</span>
+                  <span title={voice.error || voice.currentChannelName || "Голосовой канал"}>
+                    {voice.error || voice.currentChannelName || "Голосовой канал"}
+                  </span>
                 </div>
                 <button
                   className="voiceDockIcon"

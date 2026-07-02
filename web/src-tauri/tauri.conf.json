@@ -37,7 +37,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "exceptionDomain": "194.34.239.146"
+      "exceptionDomain": "194.34.239.146",
+      "signingIdentity": "Apple Development: kimcrent@icloud.com (A29PH6MRKG)"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"

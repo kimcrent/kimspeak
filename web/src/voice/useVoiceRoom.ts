@@ -536,14 +536,29 @@ export function useVoiceRoom() {
         );
 
         await room.connect(voiceToken.url, voiceToken.token);
-        const microphonePublication = await room.localParticipant.setMicrophoneEnabled(
-          !voiceSettings.muted,
-          getMicrophoneOptions(voiceSettings),
-        );
 
-        const localTrack = microphonePublication?.track;
-        if (!voiceSettings.muted && localTrack instanceof LocalAudioTrack) {
-          startMicrophoneMonitor(localTrack);
+        if (!voiceSettings.muted) {
+          try {
+            const microphonePublication =
+              await room.localParticipant.setMicrophoneEnabled(
+                true,
+                getMicrophoneOptions(voiceSettings),
+              );
+
+            const localTrack = microphonePublication?.track;
+            if (localTrack instanceof LocalAudioTrack) {
+              startMicrophoneMonitor(localTrack);
+            }
+          } catch (microphoneError) {
+            const message =
+              microphoneError instanceof Error
+                ? microphoneError.message
+                : "Не удалось включить микрофон";
+
+            console.error("Failed to enable microphone:", microphoneError);
+            setVoiceSettings((current) => ({ ...current, muted: true }));
+            setError(`Микрофон недоступен: ${message}`);
+          }
         }
 
         if (room.state === ConnectionState.Connected) {
@@ -552,14 +567,16 @@ export function useVoiceRoom() {
 
         refreshParticipants();
       } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Не удалось подключиться к голосовому каналу";
+
+        console.error("Failed to connect voice room:", err);
         room.disconnect();
         roomRef.current = null;
         setState("error");
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Не удалось подключиться к голосовому каналу",
-        );
+        setError(message);
       }
     },
     [

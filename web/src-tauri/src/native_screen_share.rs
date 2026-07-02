@@ -1,20 +1,36 @@
 use livekit::options::{TrackPublishOptions, VideoEncoding};
 use livekit::prelude::*;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use livekit::webrtc::audio_frame::AudioFrame;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use livekit::webrtc::audio_source::native::NativeAudioSource;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use livekit::webrtc::audio_source::{AudioSourceOptions, RtcAudioSource};
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use livekit::webrtc::native::yuv_helper;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use livekit::webrtc::video_frame::{I420Buffer, VideoBuffer, VideoFrame, VideoRotation};
 use livekit::webrtc::video_source::native::NativeVideoSource;
 use livekit::webrtc::video_source::{RtcVideoSource, VideoResolution};
 
+#[cfg(target_os = "macos")]
+use screencapturekit::cv::CVPixelBufferLockFlags;
+#[cfg(target_os = "macos")]
+use screencapturekit::prelude::*;
+
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::borrow::Cow;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(target_os = "macos")]
+use std::thread;
+#[cfg(target_os = "windows")]
+use std::time::Instant;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::oneshot;
 
@@ -89,6 +105,12 @@ struct ScreenCaptureSettings {
     capture_audio: bool,
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const SCREEN_AUDIO_SAMPLE_RATE: u32 = 48_000;
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const SCREEN_AUDIO_NUM_CHANNELS: u32 = 2;
+
 fn normalize_settings(request: &StartNativeScreenShareRequest) -> ScreenCaptureSettings {
     let (width, height) = match request.resolution.as_deref() {
         Some("720p") => (1280, 720),
@@ -107,6 +129,7 @@ fn normalize_settings(request: &StartNativeScreenShareRequest) -> ScreenCaptureS
     }
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn current_timestamp_us() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -119,9 +142,66 @@ pub async fn list_capture_sources() -> Result<Vec<CaptureSource>, String> {
     list_capture_sources_impl()
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn list_capture_sources_impl() -> Result<Vec<CaptureSource>, String> {
-    Err("native screen capture is currently implemented only for Windows".to_string())
+    Err("native screen capture is currently implemented only for Windows and macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn list_capture_sources_impl() -> Result<Vec<CaptureSource>, String> {
+    let content = SCShareableContent::create()
+        .with_on_screen_windows_only(true)
+        .with_exclude_desktop_windows(true)
+        .get()
+        .map_err(|error| {
+            format!(
+                "failed to enumerate macOS capture sources: {error}. Grant Screen Recording permission to KIMSpeak in System Settings."
+            )
+        })?;
+
+    let mut sources = Vec::new();
+
+    for (index, display) in content.displays().into_iter().enumerate() {
+        let display_id = display.display_id();
+
+        sources.push(CaptureSource {
+            id: format!("display:{display_id}"),
+            title: format!(
+                "Display {} — {}x{}",
+                index + 1,
+                display.width(),
+                display.height()
+            ),
+            source_type: "monitor".to_string(),
+            thumbnail: None,
+        });
+    }
+
+    for window in content.windows() {
+        if !window.is_on_screen() {
+            continue;
+        }
+
+        let title = window.title().unwrap_or_default();
+        if title.trim().is_empty() {
+            continue;
+        }
+
+        let app_name = window
+            .owning_application()
+            .map(|application| application.application_name())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        sources.push(CaptureSource {
+            id: format!("window:{}", window.window_id()),
+            title: format!("{title} — {app_name}"),
+            source_type: "window".to_string(),
+            thumbnail: None,
+        });
+    }
+
+    Ok(sources)
 }
 
 #[cfg(target_os = "windows")]
@@ -202,8 +282,8 @@ pub async fn start_native_screen_share(
 
     let settings = normalize_settings(&request);
 
-    if settings.capture_audio && !cfg!(target_os = "windows") {
-        println!("captureAudio=true requested, but system audio capture is currently implemented only for Windows");
+    if settings.capture_audio && !cfg!(any(target_os = "windows", target_os = "macos")) {
+        println!("captureAudio=true requested, but system audio capture is currently implemented only for Windows and macOS");
     }
 
     let previous = {
@@ -351,12 +431,12 @@ async fn run_livekit_screen_publisher(
 
     let stop_flag = Arc::new(AtomicBool::new(false));
 
-    #[cfg(target_os = "windows")]
-    let audio_task = if settings.capture_audio {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let audio_source = if settings.capture_audio {
         let audio_source = NativeAudioSource::new(
             AudioSourceOptions::default(),
-            crate::screen_audio::SAMPLE_RATE,
-            crate::screen_audio::NUM_CHANNELS,
+            SCREEN_AUDIO_SAMPLE_RATE,
+            SCREEN_AUDIO_NUM_CHANNELS,
             100,
         );
 
@@ -378,6 +458,13 @@ async fn run_livekit_screen_publisher(
 
         println!("Native screen audio track published to LiveKit");
 
+        Some(audio_source)
+    } else {
+        None
+    };
+
+    #[cfg(target_os = "windows")]
+    let audio_task = if let Some(audio_source) = audio_source.clone() {
         let audio_stop_flag = stop_flag.clone();
 
         Some(tauri::async_runtime::spawn(async move {
@@ -389,7 +476,7 @@ async fn run_livekit_screen_publisher(
                     break;
                 }
 
-                let samples_per_channel = samples.len() as u32 / crate::screen_audio::NUM_CHANNELS;
+                let samples_per_channel = samples.len() as u32 / SCREEN_AUDIO_NUM_CHANNELS;
 
                 if samples_per_channel == 0 {
                     continue;
@@ -397,8 +484,8 @@ async fn run_livekit_screen_publisher(
 
                 let frame = AudioFrame {
                     data: Cow::Owned(samples),
-                    sample_rate: crate::screen_audio::SAMPLE_RATE,
-                    num_channels: crate::screen_audio::NUM_CHANNELS,
+                    sample_rate: SCREEN_AUDIO_SAMPLE_RATE,
+                    num_channels: SCREEN_AUDIO_NUM_CHANNELS,
                     samples_per_channel,
                 };
 
@@ -416,7 +503,10 @@ async fn run_livekit_screen_publisher(
         None
     };
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let audio_task: Option<JoinHandle<()>> = None;
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let audio_task: Option<JoinHandle<()>> = None;
 
     #[cfg(target_os = "windows")]
@@ -436,9 +526,28 @@ async fn run_livekit_screen_publisher(
         })
     };
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let capture_task = {
+        let capture_request = request.clone();
+        let capture_settings = settings.clone();
+        let capture_stop_flag = stop_flag.clone();
+        let capture_video_source = video_source.clone();
+        let capture_audio_source = audio_source.clone();
+
+        tauri::async_runtime::spawn_blocking(move || {
+            run_macos_screen_capture(
+                capture_request,
+                capture_settings,
+                capture_video_source,
+                capture_audio_source,
+                capture_stop_flag,
+            )
+        })
+    };
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let capture_task = tauri::async_runtime::spawn_blocking(move || {
-        Err("native screen capture is currently implemented only for Windows".to_string())
+        Err("native screen capture is currently implemented only for Windows and macOS".to_string())
     });
 
     tokio::select! {
@@ -460,6 +569,11 @@ async fn run_livekit_screen_publisher(
 
     if let Some(audio_task) = audio_task {
         audio_task.abort();
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    if let Some(audio_source) = audio_source {
+        audio_source.clear_buffer();
     }
 
     events_task.abort();
@@ -487,7 +601,23 @@ fn resolve_capture_settings(
     Ok(settings)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn resolve_capture_settings(
+    request: &StartNativeScreenShareRequest,
+    mut settings: ScreenCaptureSettings,
+) -> Result<ScreenCaptureSettings, String> {
+    if settings.width > 0 && settings.height > 0 {
+        return Ok(settings);
+    }
+
+    let (width, height) = resolve_macos_capture_item_size(&request.source_id)?;
+    settings.width = width.max(1);
+    settings.height = height.max(1);
+
+    Ok(settings)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn resolve_capture_settings(
     _request: &StartNativeScreenShareRequest,
     mut settings: ScreenCaptureSettings,
@@ -498,6 +628,108 @@ fn resolve_capture_settings(
     }
 
     Ok(settings)
+}
+
+#[cfg(target_os = "macos")]
+enum MacosCaptureItem {
+    Display(SCDisplay),
+    Window(SCWindow),
+}
+
+#[cfg(target_os = "macos")]
+fn get_macos_shareable_content() -> Result<SCShareableContent, String> {
+    SCShareableContent::create()
+        .with_on_screen_windows_only(true)
+        .with_exclude_desktop_windows(true)
+        .get()
+        .map_err(|error| {
+            format!(
+                "failed to get macOS shareable content: {error}. Grant Screen Recording permission to KIMSpeak in System Settings."
+            )
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_macos_capture_item(source_id: &str) -> Result<MacosCaptureItem, String> {
+    let content = get_macos_shareable_content()?;
+
+    if source_id == "monitor:primary" || source_id == "display:primary" {
+        let display = content
+            .displays()
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no display is available for capture".to_string())?;
+
+        return Ok(MacosCaptureItem::Display(display));
+    }
+
+    if let Some(raw_display_id) = source_id
+        .strip_prefix("display:")
+        .or_else(|| source_id.strip_prefix("monitor:"))
+    {
+        let display_id = raw_display_id
+            .parse::<u32>()
+            .map_err(|_| format!("invalid display source id: {source_id}"))?;
+
+        let display = content
+            .displays()
+            .into_iter()
+            .find(|display| display.display_id() == display_id)
+            .ok_or_else(|| format!("display is not available for capture: {source_id}"))?;
+
+        return Ok(MacosCaptureItem::Display(display));
+    }
+
+    if let Some(raw_window_id) = source_id.strip_prefix("window:") {
+        let window_id = raw_window_id
+            .parse::<u32>()
+            .map_err(|_| format!("invalid window source id: {source_id}"))?;
+
+        let window = content
+            .windows()
+            .into_iter()
+            .find(|window| window.window_id() == window_id)
+            .ok_or_else(|| format!("window is not available for capture: {source_id}"))?;
+
+        return Ok(MacosCaptureItem::Window(window));
+    }
+
+    Err(format!("unknown capture source id: {source_id}"))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_capture_item_size(item: &MacosCaptureItem) -> (u32, u32) {
+    match item {
+        MacosCaptureItem::Display(display) => (display.width(), display.height()),
+        MacosCaptureItem::Window(window) => {
+            let frame = window.frame();
+            (
+                frame.size.width.round().max(1.0) as u32,
+                frame.size.height.round().max(1.0) as u32,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_macos_capture_item_size(source_id: &str) -> Result<(u32, u32), String> {
+    let item = resolve_macos_capture_item(source_id)?;
+    Ok(macos_capture_item_size(&item))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_content_filter_for_item(item: &MacosCaptureItem) -> Result<SCContentFilter, String> {
+    match item {
+        MacosCaptureItem::Display(display) => SCContentFilter::create()
+            .with_display(display)
+            .with_excluding_windows(&[])
+            .try_build()
+            .map_err(|error| format!("failed to create macOS display capture filter: {error}")),
+        MacosCaptureItem::Window(window) => SCContentFilter::create()
+            .with_window(window)
+            .try_build()
+            .map_err(|error| format!("failed to create macOS window capture filter: {error}")),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -588,6 +820,352 @@ fn run_windows_graphics_capture(
             run_windows_graphics_capture_for_item(window, settings, video_source, stop_flag)
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn run_macos_screen_capture(
+    request: StartNativeScreenShareRequest,
+    settings: ScreenCaptureSettings,
+    video_source: NativeVideoSource,
+    audio_source: Option<NativeAudioSource>,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let item = resolve_macos_capture_item(&request.source_id)?;
+    let filter = macos_content_filter_for_item(&item)?;
+    let captures_audio = audio_source.is_some();
+
+    let config = SCStreamConfiguration::new()
+        .with_width(settings.width.max(1))
+        .with_height(settings.height.max(1))
+        .with_pixel_format(PixelFormat::BGRA)
+        .with_shows_cursor(true)
+        .with_captures_audio(captures_audio)
+        .with_excludes_current_process_audio(true)
+        .with_sample_rate(SCREEN_AUDIO_SAMPLE_RATE as i32)
+        .with_channel_count(SCREEN_AUDIO_NUM_CHANNELS as i32)
+        .with_fps(settings.frame_rate.max(1));
+
+    if captures_audio && !config.excludes_current_process_audio() {
+        return Err(
+            "macOS system audio capture cannot safely exclude KIMSpeak audio on this system"
+                .to_string(),
+        );
+    }
+
+    let handler = Arc::new(MacosLiveKitCapture {
+        video_source,
+        audio_source,
+        target_width: settings.width,
+        target_height: settings.height,
+    });
+
+    let mut stream = SCStream::new(&filter, &config);
+
+    let video_handler = handler.clone();
+    stream
+        .add_output_handler(
+            move |sample, output_type| video_handler.handle(sample, output_type),
+            SCStreamOutputType::Screen,
+        )
+        .ok_or_else(|| "failed to register macOS screen capture output handler".to_string())?;
+
+    if captures_audio {
+        let audio_handler = handler.clone();
+        stream
+            .add_output_handler(
+                move |sample, output_type| audio_handler.handle(sample, output_type),
+                SCStreamOutputType::Audio,
+            )
+            .ok_or_else(|| "failed to register macOS screen audio output handler".to_string())?;
+    }
+
+    stream
+        .start_capture()
+        .map_err(|error| format!("failed to start macOS ScreenCaptureKit stream: {error}"))?;
+
+    println!(
+        "macOS ScreenCaptureKit stream started: source={}, {}x{}, audio={}",
+        request.source_id, settings.width, settings.height, captures_audio,
+    );
+
+    while !stop_flag.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    stream
+        .stop_capture()
+        .map_err(|error| format!("failed to stop macOS ScreenCaptureKit stream: {error}"))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+struct MacosLiveKitCapture {
+    video_source: NativeVideoSource,
+    audio_source: Option<NativeAudioSource>,
+    target_width: u32,
+    target_height: u32,
+}
+
+#[cfg(target_os = "macos")]
+impl MacosLiveKitCapture {
+    fn handle(&self, sample: CMSampleBuffer, output_type: SCStreamOutputType) {
+        match output_type {
+            SCStreamOutputType::Screen => self.handle_video(sample),
+            SCStreamOutputType::Audio => self.handle_audio(sample),
+            SCStreamOutputType::Microphone => {}
+        }
+    }
+
+    fn handle_video(&self, sample: CMSampleBuffer) {
+        if sample
+            .frame_status()
+            .map(|status| !status.has_content())
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        if let Err(error) = sample.make_data_ready() {
+            eprintln!("failed to prepare macOS screen sample buffer: {error}");
+            return;
+        }
+
+        let Some(pixel_buffer) = sample.image_buffer() else {
+            return;
+        };
+
+        let guard = match pixel_buffer.lock(CVPixelBufferLockFlags::READ_ONLY) {
+            Ok(guard) => guard,
+            Err(error) => {
+                eprintln!("failed to lock macOS screen pixel buffer: {error}");
+                return;
+            }
+        };
+
+        let width = guard.width() as u32;
+        let height = guard.height() as u32;
+        let bytes_per_row = guard.bytes_per_row();
+
+        if width == 0 || height == 0 || bytes_per_row == 0 {
+            return;
+        }
+
+        let raw_bgra = guard.as_slice();
+        let expected_row_bytes = width as usize * 4;
+
+        let video_frame = if bytes_per_row == expected_row_bytes {
+            bgra_to_i420_frame(
+                raw_bgra,
+                width,
+                height,
+                self.target_width,
+                self.target_height,
+            )
+        } else {
+            let Some(packed_bgra) =
+                pack_macos_bgra_rows(raw_bgra, width as usize, height as usize, bytes_per_row)
+            else {
+                eprintln!("macOS screen pixel buffer has an invalid row stride");
+                return;
+            };
+
+            bgra_to_i420_frame(
+                &packed_bgra,
+                width,
+                height,
+                self.target_width,
+                self.target_height,
+            )
+        };
+
+        self.video_source.capture_frame(&video_frame);
+    }
+
+    fn handle_audio(&self, sample: CMSampleBuffer) {
+        let Some(audio_source) = self.audio_source.clone() else {
+            return;
+        };
+
+        if let Err(error) = sample.make_data_ready() {
+            eprintln!("failed to prepare macOS audio sample buffer: {error}");
+            return;
+        }
+
+        let Some(samples) = macos_audio_sample_to_i16(&sample) else {
+            return;
+        };
+
+        let samples_per_channel = samples.len() as u32 / SCREEN_AUDIO_NUM_CHANNELS;
+
+        if samples_per_channel == 0 {
+            return;
+        }
+
+        tauri::async_runtime::spawn(async move {
+            let frame = AudioFrame {
+                data: Cow::Owned(samples),
+                sample_rate: SCREEN_AUDIO_SAMPLE_RATE,
+                num_channels: SCREEN_AUDIO_NUM_CHANNELS,
+                samples_per_channel,
+            };
+
+            if let Err(error) = audio_source.capture_frame(&frame).await {
+                eprintln!("failed to capture macOS screen audio frame: {error}");
+            }
+        });
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn pack_macos_bgra_rows(
+    raw_bgra: &[u8],
+    width: usize,
+    height: usize,
+    bytes_per_row: usize,
+) -> Option<Vec<u8>> {
+    let row_bytes = width.checked_mul(4)?;
+    let mut packed = Vec::with_capacity(row_bytes.checked_mul(height)?);
+
+    for row in 0..height {
+        let start = row.checked_mul(bytes_per_row)?;
+        let end = start.checked_add(row_bytes)?;
+
+        if end > raw_bgra.len() {
+            return None;
+        }
+
+        packed.extend_from_slice(&raw_bgra[start..end]);
+    }
+
+    Some(packed)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_audio_sample_to_i16(sample: &CMSampleBuffer) -> Option<Vec<i16>> {
+    let buffer_list = sample.audio_buffer_list()?;
+
+    if buffer_list.num_buffers() == 0 {
+        return None;
+    }
+
+    if buffer_list.num_buffers() == 1 {
+        let buffer = buffer_list.get(0)?;
+        let source_channels = buffer.number_channels.max(1) as usize;
+        let samples = audio_bytes_to_i16(buffer.data())?;
+
+        return Some(normalize_interleaved_audio_channels(
+            samples,
+            source_channels,
+            SCREEN_AUDIO_NUM_CHANNELS as usize,
+        ));
+    }
+
+    let mut planes = Vec::new();
+
+    for buffer in buffer_list.iter() {
+        let samples = audio_bytes_to_i16(buffer.data())?;
+
+        if !samples.is_empty() {
+            planes.push(samples);
+        }
+    }
+
+    if planes.is_empty() {
+        return None;
+    }
+
+    Some(interleave_planar_audio(
+        &planes,
+        SCREEN_AUDIO_NUM_CHANNELS as usize,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn audio_bytes_to_i16(bytes: &[u8]) -> Option<Vec<i16>> {
+    if bytes.len() >= 4 && bytes.len() % 4 == 0 && looks_like_f32_pcm(bytes) {
+        return Some(
+            bytes
+                .chunks_exact(4)
+                .map(|chunk| {
+                    let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                    let sample = sample.clamp(-1.0, 1.0);
+                    (sample * i16::MAX as f32) as i16
+                })
+                .collect(),
+        );
+    }
+
+    if bytes.len() >= 2 && bytes.len() % 2 == 0 {
+        return Some(
+            bytes
+                .chunks_exact(2)
+                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect(),
+        );
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn looks_like_f32_pcm(bytes: &[u8]) -> bool {
+    let mut checked = 0usize;
+
+    for chunk in bytes.chunks_exact(4).take(32) {
+        let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+
+        if !sample.is_finite() || sample.abs() > 16.0 {
+            return false;
+        }
+
+        checked += 1;
+    }
+
+    checked > 0
+}
+
+#[cfg(target_os = "macos")]
+fn normalize_interleaved_audio_channels(
+    samples: Vec<i16>,
+    source_channels: usize,
+    target_channels: usize,
+) -> Vec<i16> {
+    if source_channels == target_channels {
+        return samples;
+    }
+
+    let source_channels = source_channels.max(1);
+    let target_channels = target_channels.max(1);
+    let frames = samples.len() / source_channels;
+    let mut normalized = Vec::with_capacity(frames * target_channels);
+
+    for frame in 0..frames {
+        let source_start = frame * source_channels;
+
+        for channel in 0..target_channels {
+            let source_channel = channel.min(source_channels - 1);
+            normalized.push(samples[source_start + source_channel]);
+        }
+    }
+
+    normalized
+}
+
+#[cfg(target_os = "macos")]
+fn interleave_planar_audio(planes: &[Vec<i16>], target_channels: usize) -> Vec<i16> {
+    let target_channels = target_channels.max(1);
+    let frames = planes.iter().map(Vec::len).min().unwrap_or(0);
+    let mut interleaved = Vec::with_capacity(frames * target_channels);
+
+    for frame in 0..frames {
+        for channel in 0..target_channels {
+            let plane = channel.min(planes.len() - 1);
+            interleaved.push(planes[plane][frame]);
+        }
+    }
+
+    interleaved
 }
 
 #[cfg(target_os = "windows")]
@@ -700,7 +1278,7 @@ impl GraphicsCaptureApiHandler for LiveKitWgcCapture {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn bgra_to_i420_frame(
     bgra: &[u8],
     source_width: u32,
@@ -760,7 +1338,7 @@ fn bgra_to_i420_frame(
     output_frame
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn fit_inside(
     source_width: u32,
     source_height: u32,
@@ -788,7 +1366,7 @@ fn fit_inside(
     (width.max(1), height.max(1))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn fill_i420_black(buffer: &mut I420Buffer) {
     let (data_y, data_u, data_v) = buffer.data_mut();
     data_y.fill(16);
@@ -796,7 +1374,7 @@ fn fill_i420_black(buffer: &mut I420Buffer) {
     data_v.fill(128);
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn copy_i420_centered(source: &I420Buffer, target: &mut I420Buffer) {
     let x_offset = ((target.width().saturating_sub(source.width())) / 2) & !1;
     let y_offset = ((target.height().saturating_sub(source.height())) / 2) & !1;
@@ -838,7 +1416,7 @@ fn copy_i420_centered(source: &I420Buffer, target: &mut I420Buffer) {
     );
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn copy_plane(
     source: &[u8],
     source_stride: u32,

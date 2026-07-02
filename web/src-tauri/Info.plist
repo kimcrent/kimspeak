@@ -4,6 +4,8 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>KIMSpeak uses the microphone so you can talk in voice channels.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>KIMSpeak uses screen recording to share your screen and selected system audio in voice channels.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoadsInWebContent</key>

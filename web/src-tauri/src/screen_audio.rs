@@ -56,8 +56,10 @@ fn capture_loop(tx: mpsc::Sender<AudioChunk>, stop_flag: Arc<AtomicBool>) -> Res
     // hearing their own voices through the streamer's shared system audio.
     let current_process_id = std::process::id();
     let include_current_process_tree = false;
-    let mut audio_client =
-        AudioClient::new_application_loopback_client(current_process_id, include_current_process_tree)?;
+    let mut audio_client = AudioClient::new_application_loopback_client(
+        current_process_id,
+        include_current_process_tree,
+    )?;
 
     // LiveKit/WebRTC удобнее кормить 48 kHz stereo.
     // autoconvert=true ниже позволит WASAPI конвертировать формат.
