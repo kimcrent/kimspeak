@@ -114,9 +114,8 @@ input:disabled {
   border-radius: 8px;
   border: 1px solid var(--ks-white-line);
   background:
-    linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.54)),
-    url("/kimspeak-mascot.png") center 28% / cover;
-  color: transparent;
+    linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.28)),
+    url("/kimspeak-mascot-icon.png") center / cover;
   font-size: 34px;
   font-weight: 900;
   box-shadow: 0 0 0 1px rgba(127, 141, 255, 0.24), 0 14px 44px rgba(0, 0, 0, 0.28);
@@ -295,9 +294,8 @@ input:disabled {
 .serverLogo {
   border: 1px solid var(--ks-white-line);
   background:
-    linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.62)),
-    url("/kimspeak-mascot.png") center 28% / cover;
-  color: transparent;
+    linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.34)),
+    url("/kimspeak-mascot-icon.png") center / cover;
   font-size: 24px;
 }
 
@@ -2984,9 +2982,21 @@ input:focus-visible {
 }
 
 .desktop-titlebar__logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 700;
   color: #dbdee1;
+}
+
+.desktop-titlebar__mark {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: url("/kimspeak-mascot-icon.png") center / cover;
 }
 
 .desktop-titlebar__controls {

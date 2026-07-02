@@ -1621,7 +1621,7 @@ function App() {
       <AppShell>
         <div className="loadingPage">
           <div className="loadingCard">
-            <div className="brandMark">K</div>
+            <div className="brandMark" role="img" aria-label="KIMSpeak" />
             <h1>kimspeak</h1>
             <p>Проверяем авторизацию...</p>
           </div>
@@ -1635,7 +1635,7 @@ function App() {
       <AppShell>
         <div className="authPage">
           <section className="authHero">
-            <div className="brandMark">K</div>
+            <div className="brandMark" role="img" aria-label="KIMSpeak" />
             <h1>kimspeak</h1>
             <p>
               Войдите в аккаунт, чтобы открыть серверы, каналы и живую ленту
@@ -1744,7 +1744,7 @@ function App() {
     <AppShell>
       <div className="app">
         <aside className="servers" aria-label="Серверы">
-          <div className="serverLogo">K</div>
+          <div className="serverLogo" role="img" aria-label="KIMSpeak" />
 
           <div className="serverRail">
             {guilds.map((guild) => (

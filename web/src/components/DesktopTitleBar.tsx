@@ -43,7 +43,12 @@ export function DesktopTitleBar() {
         onMouseDown={handleStartDrag}
       >
         <div className="desktop-titlebar__logo" data-tauri-drag-region>
-          KIMSpeak
+          <span
+            className="desktop-titlebar__mark"
+            data-tauri-drag-region
+            aria-hidden="true"
+          />
+          <span data-tauri-drag-region>KIMSpeak</span>
         </div>
       </div>
 
