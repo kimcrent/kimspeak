@@ -9,9 +9,10 @@ import (
 )
 
 type ChannelMember struct {
-	ID       uuid.UUID `json:"id"`
-	Username string    `json:"username"`
-	Role     string    `json:"role"`
+	ID        uuid.UUID `json:"id"`
+	Username  string    `json:"username"`
+	AvatarURL *string   `json:"avatar_url,omitempty"`
+	Role      string    `json:"role"`
 }
 
 type Repository struct {
@@ -66,6 +67,7 @@ func (r *Repository) FindByGuildAndUser(ctx context.Context, guildID uuid.UUID, 
 		SELECT
 			u.id,
 			u.username,
+			u.avatar_url,
 			gm.role
 		FROM guild_members gm
 		JOIN users u ON u.id = gm.user_id
@@ -74,6 +76,7 @@ func (r *Repository) FindByGuildAndUser(ctx context.Context, guildID uuid.UUID, 
 	`, guildID, userID).Scan(
 		&member.ID,
 		&member.Username,
+		&member.AvatarURL,
 		&member.Role,
 	)
 	if err != nil {
@@ -89,6 +92,7 @@ func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]Chan
 			SELECT
 				u.id,
 				u.username,
+				u.avatar_url,
 				gm.role
 			FROM guild_members gm
 			JOIN users u ON u.id = gm.user_id
@@ -99,6 +103,7 @@ func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]Chan
 			SELECT
 				u.id,
 				u.username,
+				u.avatar_url,
 				'owner' AS role
 			FROM guilds g
 			JOIN users u ON u.id = g.owner_id
@@ -108,6 +113,7 @@ func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]Chan
 			SELECT
 				id,
 				username,
+				MAX(avatar_url) AS avatar_url,
 				MIN(
 					CASE role
 						WHEN 'owner' THEN 0
@@ -121,6 +127,7 @@ func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]Chan
 		SELECT
 			id,
 			username,
+			avatar_url,
 			CASE role_rank
 				WHEN 0 THEN 'owner'
 				WHEN 1 THEN 'admin'
@@ -144,6 +151,7 @@ func (r *Repository) ListByGuild(ctx context.Context, guildID uuid.UUID) ([]Chan
 		err := rows.Scan(
 			&member.ID,
 			&member.Username,
+			&member.AvatarURL,
 			&member.Role,
 		)
 		if err != nil {
@@ -271,6 +279,7 @@ func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]
 			SELECT
 				u.id,
 				u.username,
+				u.avatar_url,
 				gm.role
 			FROM channel_guild cg
 			JOIN guild_members gm ON gm.guild_id = cg.guild_id
@@ -281,6 +290,7 @@ func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]
 			SELECT
 				u.id,
 				u.username,
+				u.avatar_url,
 				'owner' AS role
 			FROM channel_guild cg
 			JOIN guilds g ON g.id = cg.guild_id
@@ -290,6 +300,7 @@ func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]
 			SELECT
 				id,
 				username,
+				MAX(avatar_url) AS avatar_url,
 				MIN(
 					CASE role
 						WHEN 'owner' THEN 0
@@ -303,6 +314,7 @@ func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]
 		SELECT
 			id,
 			username,
+			avatar_url,
 			CASE role_rank
 				WHEN 0 THEN 'owner'
 				WHEN 1 THEN 'admin'
@@ -326,6 +338,7 @@ func (r *Repository) ListByChannel(ctx context.Context, channelID uuid.UUID) ([]
 		err := rows.Scan(
 			&member.ID,
 			&member.Username,
+			&member.AvatarURL,
 			&member.Role,
 		)
 		if err != nil {

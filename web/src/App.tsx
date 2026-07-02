@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, ReactNode } from "react";
+import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
 import "./App.css";
 import {
   acceptGuildInvitation,
@@ -20,6 +20,7 @@ import {
   login,
   register,
   renameChannel,
+  updateMeProfile,
 } from "./api";
 import type {
   Channel,
@@ -65,6 +66,19 @@ type AppSettingsModalProps = {
   onClose: () => void;
   onToggleMute: () => void;
   onUpdateVoiceSettings: (patch: Partial<VoiceSettings>) => void;
+};
+
+type ProfileModalProps = {
+  user: User;
+  username: string;
+  avatarUrl: string;
+  error: string;
+  isSaving: boolean;
+  onAvatarFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClearAvatar: () => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUsernameChange: (value: string) => void;
 };
 
 const TOKEN_KEY = "kimspeak_token";
@@ -132,6 +146,142 @@ function getRoleLabel(role: ChannelMember["role"]) {
   }
 
   return "Участник";
+}
+
+function hasAvatarImage(avatarUrl?: string | null) {
+  return Boolean(avatarUrl?.trim());
+}
+
+function getAvatarClassName(baseClassName: string, avatarUrl?: string | null) {
+  return hasAvatarImage(avatarUrl)
+    ? `${baseClassName} hasImage`
+    : baseClassName;
+}
+
+function getAvatarStyle(avatarUrl?: string | null): CSSProperties | undefined {
+  const normalizedUrl = avatarUrl?.trim();
+
+  if (!normalizedUrl) {
+    return undefined;
+  }
+
+  return {
+    backgroundImage: `url(${JSON.stringify(normalizedUrl)})`,
+  };
+}
+
+function ProfileModal({
+  user,
+  username,
+  avatarUrl,
+  error,
+  isSaving,
+  onAvatarFileChange,
+  onClearAvatar,
+  onClose,
+  onSubmit,
+  onUsernameChange,
+}: ProfileModalProps) {
+  const normalizedAvatarUrl = avatarUrl.trim();
+  const usernameLength = Array.from(username.trim()).length;
+  const canSave =
+    !isSaving &&
+    usernameLength >= 3 &&
+    usernameLength <= 32 &&
+    normalizedAvatarUrl.length <= 2_000_000;
+
+  return (
+    <div
+      className="modalBackdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSaving) {
+          onClose();
+        }
+      }}
+    >
+      <section className="profileModal" aria-modal="true" role="dialog">
+        <header className="profileModalHeader">
+          <div
+            className={getAvatarClassName(
+              "profilePreviewAvatar",
+              normalizedAvatarUrl,
+            )}
+            style={getAvatarStyle(normalizedAvatarUrl)}
+          >
+            {!hasAvatarImage(normalizedAvatarUrl) && getInitial(username || user.username)}
+          </div>
+          <div>
+            <h2>Профиль</h2>
+            <span>{user.email}</span>
+          </div>
+          <button
+            className="settingsClose"
+            disabled={isSaving}
+            onClick={onClose}
+            title="Закрыть"
+            type="button"
+          >
+            ×
+          </button>
+        </header>
+
+        <form className="profileModalForm" onSubmit={onSubmit}>
+          <label>
+            Никнейм
+            <input
+              autoFocus
+              disabled={isSaving}
+              maxLength={32}
+              minLength={3}
+              onChange={(event) => onUsernameChange(event.target.value)}
+              placeholder="k1epa"
+              value={username}
+            />
+          </label>
+
+          <div className="profileAvatarControls">
+            <label className="profileAvatarUpload">
+              <input
+                accept="image/*"
+                disabled={isSaving}
+                onChange={onAvatarFileChange}
+                type="file"
+              />
+              Выбрать файл
+            </label>
+            <button
+              className="createModalSecondary"
+              disabled={isSaving || !normalizedAvatarUrl}
+              onClick={onClearAvatar}
+              type="button"
+            >
+              Убрать аватар
+            </button>
+          </div>
+
+          {error && <div className="profileModalError">{error}</div>}
+
+          <div className="createModalActions">
+            <button
+              className="createModalSecondary"
+              disabled={isSaving}
+              onClick={onClose}
+              type="button"
+            >
+              Отмена
+            </button>
+            <button
+              className="createModalPrimary"
+              disabled={!canSave}
+              type="submit"
+            >
+              {isSaving ? "Сохраняем..." : "Сохранить"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 /*
@@ -641,7 +791,11 @@ function App() {
   const [renameDraft, setRenameDraft] = useState<RenameDraft>(null);
   const [inviteUsername, setInviteUsername] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
+  const [profileError, setProfileError] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isScreenSharePickerOpen, setIsScreenSharePickerOpen] = useState(false);
   const [isNativeScreenSharing, setIsNativeScreenSharing] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
@@ -657,6 +811,7 @@ function App() {
   const [isSending, setIsSending] = useState(false);
   const [isInviteSending, setIsInviteSending] = useState(false);
   const [isInvitationUpdating, setIsInvitationUpdating] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
 
   const channelsCacheRef = useRef(new Map<string, Channel[]>());
   const guildMembersCacheRef = useRef(new Map<string, ChannelMember[]>());
@@ -1190,6 +1345,133 @@ function App() {
     setRenameDraft(null);
   }
 
+  function openProfileModal() {
+    if (!user) {
+      return;
+    }
+
+    setProfileUsername(user.username);
+    setProfileAvatarUrl(user.avatar_url || "");
+    setProfileError("");
+    setIsProfileOpen(true);
+    setCreateModalType(null);
+    setRenameDraft(null);
+    setError("");
+  }
+
+  function closeProfileModal() {
+    if (isProfileSaving) {
+      return;
+    }
+
+    setIsProfileOpen(false);
+    setProfileError("");
+  }
+
+  function updateMemberProfileInCache(nextUser: User) {
+    const patchMember = (member: ChannelMember): ChannelMember =>
+      member.id === nextUser.id
+        ? {
+            ...member,
+            username: nextUser.username,
+            avatar_url: nextUser.avatar_url || null,
+          }
+        : member;
+
+    setGuildMembers((items) => items.map(patchMember));
+    guildMembersCacheRef.current.forEach((members, guildId) => {
+      guildMembersCacheRef.current.set(guildId, members.map(patchMember));
+    });
+  }
+
+  function handleProfileAvatarFileChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Выберите изображение");
+      return;
+    }
+
+    if (file.size > 1_450_000) {
+      setProfileError("Файл аватара должен быть меньше 1.4 МБ");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        setProfileError("Не удалось прочитать файл");
+        return;
+      }
+
+      setProfileAvatarUrl(reader.result);
+      setProfileError("");
+    };
+
+    reader.onerror = () => {
+      setProfileError("Не удалось прочитать файл");
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !user) {
+      return;
+    }
+
+    const nextUsername = profileUsername.trim();
+    const usernameLength = Array.from(nextUsername).length;
+    const nextAvatarUrl = profileAvatarUrl.trim();
+
+    if (usernameLength < 3 || usernameLength > 32) {
+      setProfileError("Никнейм должен быть от 3 до 32 символов");
+      return;
+    }
+
+    if (nextAvatarUrl.length > 2_000_000) {
+      setProfileError("Аватар слишком большой");
+      return;
+    }
+
+    setIsProfileSaving(true);
+    setProfileError("");
+    setError("");
+
+    try {
+      const nextUser = await updateMeProfile(token, {
+        username: nextUsername,
+        avatar_url: nextAvatarUrl || null,
+      });
+      const normalizedUser = {
+        ...nextUser,
+        avatar_url: nextUser.avatar_url || null,
+      };
+
+      setUser(normalizedUser);
+      updateMemberProfileInCache(normalizedUser);
+      setStatus("Профиль обновлён");
+      setIsProfileOpen(false);
+    } catch (err) {
+      setProfileError(
+        err instanceof Error ? err.message : "Не удалось обновить профиль",
+      );
+      setStatus("Ошибка обновления профиля");
+    } finally {
+      setIsProfileSaving(false);
+    }
+  }
+
   async function handleCreateFromModal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1612,6 +1894,8 @@ function App() {
     setActiveChannelId("");
     closeCreateModal();
     closeRenameModal();
+    setIsProfileOpen(false);
+    setProfileError("");
     setStatus("Вы вышли из аккаунта");
     setError("");
   }
@@ -1744,7 +2028,13 @@ function App() {
     <AppShell>
       <div className="app">
         <aside className="servers" aria-label="Серверы">
-          <div className="serverLogo" role="img" aria-label="KIMSpeak" />
+          <button
+            className="serverLogo"
+            onClick={openProfileModal}
+            title="Профиль"
+            type="button"
+            aria-label="Открыть профиль"
+          />
 
           <div className="serverRail">
             {guilds.map((guild) => (
@@ -2087,11 +2377,23 @@ function App() {
           )}
 
           <div className="profilePanel">
-            <div className="profileAvatar">{getInitial(user.username)}</div>
-            <div className="profileInfo">
-              <div className="profileName">{user.username}</div>
-              <div className="profileStatus online">online</div>
-            </div>
+            <button
+              className="profileIdentity"
+              onClick={openProfileModal}
+              title="Профиль"
+              type="button"
+            >
+              <div
+                className={getAvatarClassName("profileAvatar", user.avatar_url)}
+                style={getAvatarStyle(user.avatar_url)}
+              >
+                {!hasAvatarImage(user.avatar_url) && getInitial(user.username)}
+              </div>
+              <div className="profileInfo">
+                <div className="profileName">{user.username}</div>
+                <div className="profileStatus online">online</div>
+              </div>
+            </button>
             <button
               className="profileSettings"
               onClick={() => setIsSettingsOpen(true)}
@@ -2215,7 +2517,16 @@ function App() {
                     className={isOwn ? "message ownMessage" : "message"}
                     key={message.id}
                   >
-                    <div className="avatar">{getInitial(authorName)}</div>
+                    <div
+                      className={getAvatarClassName(
+                        "avatar",
+                        isOwn ? user.avatar_url : null,
+                      )}
+                      style={getAvatarStyle(isOwn ? user.avatar_url : null)}
+                    >
+                      {(!isOwn || !hasAvatarImage(user.avatar_url)) &&
+                        getInitial(authorName)}
+                    </div>
                     <div className="messageBody">
                       <div className="messageMeta">
                         <span className="author">{authorName}</span>
@@ -2255,7 +2566,12 @@ function App() {
 
         <aside className="members">
           <div className="accountPanel">
-            <div className="bigAvatar">{getInitial(user.username)}</div>
+            <div
+              className={getAvatarClassName("bigAvatar", user.avatar_url)}
+              style={getAvatarStyle(user.avatar_url)}
+            >
+              {!hasAvatarImage(user.avatar_url) && getInitial(user.username)}
+            </div>
             <div className="accountName">{user.username}</div>
             <div className="accountEmail">{user.email}</div>
           </div>
@@ -2305,8 +2621,15 @@ function App() {
                   }
                   key={member.id}
                 >
-                  <div className="memberAvatar">
-                    {getInitial(member.username)}
+                  <div
+                    className={getAvatarClassName(
+                      "memberAvatar",
+                      member.avatar_url,
+                    )}
+                    style={getAvatarStyle(member.avatar_url)}
+                  >
+                    {!hasAvatarImage(member.avatar_url) &&
+                      getInitial(member.username)}
                   </div>
                   <div className="memberInfo">
                     <div className="memberName">{member.username}</div>
@@ -2456,6 +2779,27 @@ function App() {
               </form>
             </section>
           </div>
+        )}
+
+        {isProfileOpen && user && (
+          <ProfileModal
+            user={user}
+            username={profileUsername}
+            avatarUrl={profileAvatarUrl}
+            error={profileError}
+            isSaving={isProfileSaving}
+            onAvatarFileChange={handleProfileAvatarFileChange}
+            onClearAvatar={() => {
+              setProfileAvatarUrl("");
+              setProfileError("");
+            }}
+            onClose={closeProfileModal}
+            onSubmit={handleProfileSubmit}
+            onUsernameChange={(value) => {
+              setProfileUsername(value);
+              setProfileError("");
+            }}
+          />
         )}
 
         {isSettingsOpen && (

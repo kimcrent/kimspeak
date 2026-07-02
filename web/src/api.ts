@@ -44,6 +44,7 @@ export type User = {
   id: string;
   username: string;
   email: string;
+  avatar_url?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -78,6 +79,7 @@ export type Message = {
 export type ChannelMember = {
   id: string;
   username: string;
+  avatar_url?: string | null;
   role: "owner" | "admin" | "member";
 };
 
@@ -218,6 +220,25 @@ export async function getMe(token: string): Promise<User> {
   }
 
   return data;
+}
+
+export async function updateMeProfile(
+  token: string,
+  profile: {
+    username: string;
+    avatar_url: string | null;
+  },
+): Promise<User> {
+  const data = await request<{ user: User }>(
+    "/me/profile",
+    {
+      method: "PATCH",
+      body: JSON.stringify(profile),
+    },
+    token,
+  );
+
+  return data.user;
 }
 
 export async function listGuilds(token: string): Promise<Guild[]> {

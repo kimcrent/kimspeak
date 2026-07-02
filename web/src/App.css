@@ -299,6 +299,11 @@ input:disabled {
   font-size: 24px;
 }
 
+.serverLogo:hover {
+  border-color: var(--ks-red-line);
+  box-shadow: 0 0 0 3px var(--ks-red-soft);
+}
+
 .serverRail {
   width: 100%;
   display: flex;
@@ -507,6 +512,24 @@ input:disabled {
   background: #232428;
 }
 
+.profileIdentity {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.profileIdentity:hover .profileAvatar {
+  box-shadow: 0 0 0 3px var(--ks-red-soft);
+}
+
 .voiceDock {
   display: grid;
   gap: 8px;
@@ -635,6 +658,16 @@ input:disabled {
   background: linear-gradient(135deg, #3a3b42, var(--ks-red));
   color: #ffffff;
   font-weight: 900;
+}
+
+.profileAvatar.hasImage,
+.avatar.hasImage,
+.memberAvatar.hasImage,
+.bigAvatar.hasImage,
+.profilePreviewAvatar.hasImage {
+  background-position: center;
+  background-size: cover;
+  color: transparent;
 }
 
 .main {
@@ -1137,6 +1170,128 @@ input:disabled {
 
 .createModalPrimary:hover:not(:disabled) {
   background: var(--ks-accent-hover);
+}
+
+.profileModal {
+  width: min(520px, 100%);
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  padding: 18px;
+  background: #2b2d31;
+  color: #ffffff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.profileModalHeader {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 36px;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.profilePreviewAvatar {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ks-white-line);
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3a3b42, var(--ks-red));
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 900;
+}
+
+.profileModalHeader h2,
+.profileModalHeader span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileModalHeader h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.profileModalHeader span {
+  display: block;
+  margin-top: 4px;
+  color: #b7bbc4;
+  font-size: 13px;
+}
+
+.profileModalForm {
+  display: grid;
+  gap: 14px;
+}
+
+.profileModalForm label {
+  display: grid;
+  gap: 7px;
+  color: #b7bbc4;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.profileModalForm input {
+  min-width: 0;
+  border: 1px solid #202227;
+  border-radius: 8px;
+  background: #202227;
+  color: #ffffff;
+  outline: none;
+}
+
+.profileModalForm input {
+  height: 44px;
+  padding: 0 12px;
+}
+
+.profileModalForm input:focus {
+  border-color: var(--ks-red);
+}
+
+.profileAvatarControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profileAvatarControls button,
+.profileAvatarUpload {
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 900;
+}
+
+.profileAvatarUpload {
+  background: #383a40;
+  color: #dfe1e6;
+  cursor: pointer;
+}
+
+.profileAvatarUpload:hover {
+  background: #404249;
+  color: #ffffff;
+}
+
+.profileAvatarUpload input {
+  display: none;
+}
+
+.profileModalError {
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 90, 90, 0.12);
+  color: #ffb0b0;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 @media (max-width: 1180px) {
@@ -1716,16 +1871,20 @@ input:disabled {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid #7aa2ff;
   outline-offset: 2px;
 }
 
+.serverLogo,
 .channel,
 .voiceChannelHeader,
 .channelJoinButton,
+.profileIdentity,
 .profileSettings,
 .profileLogout,
+.profileAvatarUpload,
 .voice-panel__actions button {
   transition:
     background 0.16s ease,

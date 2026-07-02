@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,6 +17,11 @@ import (
 type Handler struct {
 	usersRepo *users.Repository
 	jwtSecret string
+}
+
+type updatedProfileRequest struct {
+	Username  string  `json:"username"`
+	AvatarURL *string `json:"avatar_url"`
 }
 
 func NewHandler(usersRepo *users.Repository, jwtSecret string) *Handler {
@@ -40,6 +46,7 @@ type userResponse struct {
 	ID        uuid.UUID `json:"id"`
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
+	AvatarURL *string   `json:"avatar_url,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -62,6 +69,7 @@ func toUserResponse(user users.User) userResponse {
 		ID:        user.ID,
 		Username:  user.Username,
 		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}
@@ -208,6 +216,73 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, meResponse{
 		User: toUserResponse(*user),
+	})
+}
+
+func (h *Handler) UpdateMeProfile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	var req updatedProfileRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid json",
+		})
+		return
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+
+	usernameLen := utf8.RuneCountInString(req.Username)
+	if usernameLen < 3 || usernameLen > 32 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "username must be between 3 and 32 characters",
+		})
+		return
+	}
+
+	if req.AvatarURL != nil && len(*req.AvatarURL) > 2_000_000 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "avatar is too large",
+		})
+		return
+	}
+
+	taken, err := h.usersRepo.IsUsernameTakenByOtherUser(r.Context(), userID, req.Username)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to check username",
+		})
+		return
+	}
+
+	if taken {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "username already exists",
+		})
+		return
+	}
+
+	user, err := h.usersRepo.UpdateProfile(r.Context(), users.UpdateProfileParams{
+		ID:        userID,
+		Username:  req.Username,
+		AvatarURL: req.AvatarURL,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to update profile",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user": toUserResponse(*user),
 	})
 }
 
