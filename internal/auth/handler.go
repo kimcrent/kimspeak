@@ -96,6 +96,29 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Password = strings.TrimSpace(req.Password)
 
+	usernameLen := utf8.RuneCountInString(req.Username)
+	if usernameLen < 3 || usernameLen > 32 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "username must be from 3 to 32 characters",
+		})
+		return
+	}
+
+	usernameTaken, err := h.usersRepo.IsUsernameTaken(r.Context(), req.Username)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to check username",
+		})
+		return
+	}
+
+	if usernameTaken {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "username already exists",
+		})
+		return
+	}
+
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": "username, email and password are required",

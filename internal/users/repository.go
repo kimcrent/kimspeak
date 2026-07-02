@@ -159,3 +159,20 @@ func (r *Repository) UpdateProfile(ctx context.Context, params UpdateProfilePara
 	}
 	return user, nil
 }
+
+func (r *Repository) IsUsernameTaken(ctx context.Context, username string) (bool, error) {
+	var exists bool
+
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM users
+			WHERE LOWER(username) = LOWER($1)
+		)
+	`, username).Scan(&exists)
+
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
