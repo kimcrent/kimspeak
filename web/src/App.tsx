@@ -3,28 +3,40 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
 import "./App.css";
 import {
+  acceptFriendRequest,
   acceptGuildInvitation,
+  cancelFriendRequest,
   createChannel,
   createGuild,
   createMessage,
   createVoiceToken,
+  declineFriendRequest,
   declineGuildInvitation,
   deleteChannel as deleteChannelRequest,
   getMe,
   inviteGuildMember,
   listChannels,
+  listFriends,
   listGuildInvitations,
   listGuildMembers,
   listGuilds,
+  listIncomingFriendRequests,
   listMessages,
+  listOutgoingFriendRequests,
   login,
   register,
   renameChannel,
+  removeFriend,
+  searchFriendUsers,
+  sendFriendRequest,
   updateMeProfile,
 } from "./api";
 import type {
   Channel,
   ChannelMember,
+  Friend,
+  FriendRequest,
+  FriendUserPreview,
   Guild,
   GuildInvitation,
   Message,
@@ -168,6 +180,16 @@ function getAvatarStyle(avatarUrl?: string | null): CSSProperties | undefined {
   return {
     backgroundImage: `url(${JSON.stringify(normalizedUrl)})`,
   };
+}
+
+function getFriendErrorMessage(err: unknown, fallback: string) {
+  const message = err instanceof Error ? err.message : fallback;
+
+  if (message.toLowerCase().includes("404 page not found")) {
+    return "Сервер друзей ещё не обновлён. Обновите backend и перезапустите API.";
+  }
+
+  return message;
 }
 
 function ProfileModal({
@@ -780,6 +802,16 @@ function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [guildMembers, setGuildMembers] = useState<ChannelMember[]>([]);
   const [invitations, setInvitations] = useState<GuildInvitation[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [incomingFriendRequests, setIncomingFriendRequests] = useState<
+    FriendRequest[]
+  >([]);
+  const [outgoingFriendRequests, setOutgoingFriendRequests] = useState<
+    FriendRequest[]
+  >([]);
+  const [friendSearchResults, setFriendSearchResults] = useState<
+    FriendUserPreview[]
+  >([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
   const [activeGuildId, setActiveGuildId] = useState("");
@@ -790,6 +822,7 @@ function App() {
   const [createName, setCreateName] = useState("");
   const [renameDraft, setRenameDraft] = useState<RenameDraft>(null);
   const [inviteUsername, setInviteUsername] = useState("");
+  const [friendSearchQuery, setFriendSearchQuery] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
   const [profileUsername, setProfileUsername] = useState("");
   const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
@@ -811,6 +844,10 @@ function App() {
   const [isSending, setIsSending] = useState(false);
   const [isInviteSending, setIsInviteSending] = useState(false);
   const [isInvitationUpdating, setIsInvitationUpdating] = useState(false);
+  const [isFriendsLoading, setIsFriendsLoading] = useState(false);
+  const [isFriendSearchLoading, setIsFriendSearchLoading] = useState(false);
+  const [friendActionId, setFriendActionId] = useState("");
+  const [friendError, setFriendError] = useState("");
   const [isProfileSaving, setIsProfileSaving] = useState(false);
 
   const channelsCacheRef = useRef(new Map<string, Channel[]>());
@@ -838,6 +875,15 @@ function App() {
   );
 
   const pendingInvitation = invitations[0] || null;
+  const pendingFriendUserIds = useMemo(
+    () =>
+      new Set([
+        ...friends.map((friend) => friend.id),
+        ...incomingFriendRequests.map((request) => request.from_user.id),
+        ...outgoingFriendRequests.map((request) => request.to_user.id),
+      ]),
+    [friends, incomingFriendRequests, outgoingFriendRequests],
+  );
   const createModalTitle =
     createModalType === "guild"
       ? "Создать сервер"
@@ -1030,6 +1076,118 @@ function App() {
       window.removeEventListener("focus", syncInvitations);
     };
   }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      setFriends([]);
+      setIncomingFriendRequests([]);
+      setOutgoingFriendRequests([]);
+      setFriendSearchResults([]);
+      setFriendSearchQuery("");
+      setFriendError("");
+      return;
+    }
+
+    let isCancelled = false;
+
+    const syncFriends = (silent = true) => {
+      if (!silent) {
+        setIsFriendsLoading(true);
+      }
+
+      Promise.all([
+        listFriends(token),
+        listIncomingFriendRequests(token),
+        listOutgoingFriendRequests(token),
+      ])
+        .then(([nextFriends, incomingRequests, outgoingRequests]) => {
+          if (isCancelled) {
+            return;
+          }
+
+          setFriends(nextFriends);
+          setIncomingFriendRequests(incomingRequests);
+          setOutgoingFriendRequests(outgoingRequests);
+          if (!silent) {
+            setFriendError("");
+          }
+        })
+        .catch((err) => {
+          if (isCancelled) {
+            return;
+          }
+
+          if (!silent) {
+            setFriendError(
+              getFriendErrorMessage(err, "Не удалось загрузить друзей"),
+            );
+          }
+        })
+        .finally(() => {
+          if (!isCancelled && !silent) {
+            setIsFriendsLoading(false);
+          }
+        });
+    };
+
+    syncFriends(false);
+
+    const intervalId = window.setInterval(() => syncFriends(true), 8000);
+    const syncOnFocus = () => syncFriends(true);
+    window.addEventListener("focus", syncOnFocus);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncOnFocus);
+    };
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      return;
+    }
+
+    const query = friendSearchQuery.trim();
+
+    if (!query) {
+      setFriendSearchResults([]);
+      setFriendError("");
+      setIsFriendSearchLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsFriendSearchLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchFriendUsers(token, query)
+        .then((items) => {
+          if (!isCancelled) {
+            setFriendSearchResults(items);
+            setFriendError("");
+          }
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            setFriendSearchResults([]);
+            setFriendError(
+              getFriendErrorMessage(err, "Не удалось найти пользователей"),
+            );
+          }
+        })
+        .finally(() => {
+          if (!isCancelled) {
+            setIsFriendSearchLoading(false);
+          }
+        });
+    }, 280);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [friendSearchQuery, token, user]);
 
   useEffect(() => {
     if (!token || !user) {
@@ -1274,6 +1432,155 @@ function App() {
       isCancelled = true;
     };
   }, [activeChannelId, token]);
+
+  async function reloadFriendState(options: { silent?: boolean } = {}) {
+    if (!token) {
+      return;
+    }
+
+    if (!options.silent) {
+      setIsFriendsLoading(true);
+    }
+
+    try {
+      const [nextFriends, incomingRequests, outgoingRequests] =
+        await Promise.all([
+          listFriends(token),
+          listIncomingFriendRequests(token),
+          listOutgoingFriendRequests(token),
+        ]);
+
+      setFriends(nextFriends);
+      setIncomingFriendRequests(incomingRequests);
+      setOutgoingFriendRequests(outgoingRequests);
+      if (!options.silent) {
+        setFriendError("");
+      }
+    } catch (err) {
+      if (!options.silent) {
+        setFriendError(
+          getFriendErrorMessage(err, "Не удалось загрузить друзей"),
+        );
+      }
+    } finally {
+      if (!options.silent) {
+        setIsFriendsLoading(false);
+      }
+    }
+  }
+
+  async function handleSendFriendRequest(username: string) {
+    if (!token || !username.trim()) {
+      return;
+    }
+
+    const actionId = `send:${username}`;
+    setFriendActionId(actionId);
+    setFriendError("");
+
+    try {
+      await sendFriendRequest(token, username.trim());
+      setFriendSearchQuery("");
+      setFriendSearchResults([]);
+      await reloadFriendState({ silent: true });
+      setStatus("Заявка в друзья отправлена");
+    } catch (err) {
+      setFriendError(
+        getFriendErrorMessage(err, "Не удалось отправить заявку"),
+      );
+    } finally {
+      setFriendActionId("");
+    }
+  }
+
+  async function handleAcceptFriendRequest(requestId: string) {
+    if (!token) {
+      return;
+    }
+
+    setFriendActionId(requestId);
+    setFriendError("");
+
+    try {
+      await acceptFriendRequest(token, requestId);
+      await reloadFriendState({ silent: true });
+      setStatus("Заявка в друзья принята");
+    } catch (err) {
+      setFriendError(
+        getFriendErrorMessage(err, "Не удалось принять заявку"),
+      );
+    } finally {
+      setFriendActionId("");
+    }
+  }
+
+  async function handleDeclineFriendRequest(requestId: string) {
+    if (!token) {
+      return;
+    }
+
+    setFriendActionId(requestId);
+    setFriendError("");
+
+    try {
+      await declineFriendRequest(token, requestId);
+      await reloadFriendState({ silent: true });
+      setStatus("Заявка в друзья отклонена");
+    } catch (err) {
+      setFriendError(
+        getFriendErrorMessage(err, "Не удалось отклонить заявку"),
+      );
+    } finally {
+      setFriendActionId("");
+    }
+  }
+
+  async function handleCancelFriendRequest(requestId: string) {
+    if (!token) {
+      return;
+    }
+
+    setFriendActionId(requestId);
+    setFriendError("");
+
+    try {
+      await cancelFriendRequest(token, requestId);
+      await reloadFriendState({ silent: true });
+      setStatus("Заявка в друзья отменена");
+    } catch (err) {
+      setFriendError(
+        getFriendErrorMessage(err, "Не удалось отменить заявку"),
+      );
+    } finally {
+      setFriendActionId("");
+    }
+  }
+
+  async function handleRemoveFriend(friend: Friend) {
+    if (!token) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить ${friend.username} из друзей?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setFriendActionId(friend.id);
+    setFriendError("");
+
+    try {
+      await removeFriend(token, friend.id);
+      await reloadFriendState({ silent: true });
+      setStatus("Друг удалён");
+    } catch (err) {
+      setFriendError(
+        getFriendErrorMessage(err, "Не удалось удалить друга"),
+      );
+    } finally {
+      setFriendActionId("");
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1889,6 +2196,12 @@ function App() {
     setChannels([]);
     setGuildMembers([]);
     setInvitations([]);
+    setFriends([]);
+    setIncomingFriendRequests([]);
+    setOutgoingFriendRequests([]);
+    setFriendSearchResults([]);
+    setFriendSearchQuery("");
+    setFriendError("");
     setMessages([]);
     setActiveGuildId("");
     setActiveChannelId("");
@@ -2574,6 +2887,184 @@ function App() {
             </div>
             <div className="accountName">{user.username}</div>
             <div className="accountEmail">{user.email}</div>
+          </div>
+
+          <div className="membersPanel friendsPanel">
+            <div className="membersTitle">
+              Друзья <span>{friends.length}</span>
+            </div>
+
+            <div className="friendSearch">
+              <input
+                value={friendSearchQuery}
+                onChange={(event) => setFriendSearchQuery(event.target.value)}
+                placeholder="Найти по никнейму"
+                autoComplete="off"
+              />
+            </div>
+
+            {friendError && <div className="friendError">{friendError}</div>}
+
+            {friendSearchQuery.trim() && (
+              <div className="friendSection">
+                <div className="friendSectionTitle">
+                  {isFriendSearchLoading ? "Ищем..." : "Найдено"}
+                </div>
+
+                {!isFriendSearchLoading && !friendSearchResults.length && (
+                  <div className="emptyHint">Пользователи не найдены</div>
+                )}
+
+                {friendSearchResults.map((searchUser) => {
+                  const isPending = pendingFriendUserIds.has(searchUser.id);
+                  const actionId = `send:${searchUser.username}`;
+
+                  return (
+                    <div className="friendRow" key={searchUser.id}>
+                      <div
+                        className={getAvatarClassName(
+                          "memberAvatar",
+                          searchUser.avatar_url,
+                        )}
+                        style={getAvatarStyle(searchUser.avatar_url)}
+                      >
+                        {!hasAvatarImage(searchUser.avatar_url) &&
+                          getInitial(searchUser.username)}
+                      </div>
+                      <div className="memberInfo">
+                        <div className="memberName">{searchUser.username}</div>
+                        <div className="friendMeta">{searchUser.email}</div>
+                      </div>
+                      <button
+                        className="friendActionButton"
+                        disabled={isPending || friendActionId === actionId}
+                        onClick={() =>
+                          handleSendFriendRequest(searchUser.username)
+                        }
+                        type="button"
+                      >
+                        {isPending ? "Есть" : "Добавить"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {incomingFriendRequests.length > 0 && (
+              <div className="friendSection">
+                <div className="friendSectionTitle">
+                  Входящие <span>{incomingFriendRequests.length}</span>
+                </div>
+                {incomingFriendRequests.map((request) => (
+                  <div className="friendRow" key={request.id}>
+                    <div
+                      className={getAvatarClassName(
+                        "memberAvatar",
+                        request.from_user.avatar_url,
+                      )}
+                      style={getAvatarStyle(request.from_user.avatar_url)}
+                    >
+                      {!hasAvatarImage(request.from_user.avatar_url) &&
+                        getInitial(request.from_user.username)}
+                    </div>
+                    <div className="memberInfo">
+                      <div className="memberName">
+                        {request.from_user.username}
+                      </div>
+                      <div className="friendMeta">хочет добавить вас</div>
+                    </div>
+                    <div className="friendActions">
+                      <button
+                        disabled={friendActionId === request.id}
+                        onClick={() => handleDeclineFriendRequest(request.id)}
+                        type="button"
+                      >
+                        Нет
+                      </button>
+                      <button
+                        disabled={friendActionId === request.id}
+                        onClick={() => handleAcceptFriendRequest(request.id)}
+                        type="button"
+                      >
+                        Да
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {outgoingFriendRequests.length > 0 && (
+              <div className="friendSection">
+                <div className="friendSectionTitle">
+                  Исходящие <span>{outgoingFriendRequests.length}</span>
+                </div>
+                {outgoingFriendRequests.map((request) => (
+                  <div className="friendRow" key={request.id}>
+                    <div
+                      className={getAvatarClassName(
+                        "memberAvatar",
+                        request.to_user.avatar_url,
+                      )}
+                      style={getAvatarStyle(request.to_user.avatar_url)}
+                    >
+                      {!hasAvatarImage(request.to_user.avatar_url) &&
+                        getInitial(request.to_user.username)}
+                    </div>
+                    <div className="memberInfo">
+                      <div className="memberName">{request.to_user.username}</div>
+                      <div className="friendMeta">ожидает ответа</div>
+                    </div>
+                    <button
+                      className="friendActionButton"
+                      disabled={friendActionId === request.id}
+                      onClick={() => handleCancelFriendRequest(request.id)}
+                      type="button"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="friendSection">
+              <div className="friendSectionTitle">
+                Список {isFriendsLoading && <span>...</span>}
+              </div>
+
+              {!isFriendsLoading && !friends.length && (
+                <div className="emptyHint">Пока нет друзей</div>
+              )}
+
+              {friends.map((friend) => (
+                <div className="friendRow" key={friend.id}>
+                  <div
+                    className={getAvatarClassName(
+                      "memberAvatar",
+                      friend.avatar_url,
+                    )}
+                    style={getAvatarStyle(friend.avatar_url)}
+                  >
+                    {!hasAvatarImage(friend.avatar_url) &&
+                      getInitial(friend.username)}
+                  </div>
+                  <div className="memberInfo">
+                    <div className="memberName">{friend.username}</div>
+                    <div className="friendMeta">{friend.email}</div>
+                  </div>
+                  <button
+                    className="friendActionButton danger"
+                    disabled={friendActionId === friend.id}
+                    onClick={() => handleRemoveFriend(friend)}
+                    type="button"
+                  >
+                    Удалить
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
           {activeGuild && (

@@ -142,7 +142,7 @@ func (h *Handler) ListIncomingRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"reuests": requests,
+		"requests": requests,
 	})
 }
 

@@ -948,6 +948,109 @@ input:disabled {
   font-weight: 900;
 }
 
+.friendsPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.friendSearch input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid #202227;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #202227;
+  color: #ffffff;
+  outline: none;
+}
+
+.friendSearch input:focus {
+  border-color: var(--ks-red);
+}
+
+.friendError {
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 90, 90, 0.12);
+  color: #ffb0b0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.friendSection {
+  display: grid;
+  gap: 6px;
+}
+
+.friendSectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #949ba4;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.friendSectionTitle span {
+  color: #dfe1e6;
+}
+
+.friendRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 6px 0;
+  color: #dfe1e6;
+}
+
+.friendMeta {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #949ba4;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendActions {
+  display: flex;
+  gap: 6px;
+}
+
+.friendActionButton,
+.friendActions button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #383a40;
+  color: #dfe1e6;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.friendActionButton:hover:not(:disabled),
+.friendActions button:hover:not(:disabled) {
+  background: var(--ks-red);
+  color: #ffffff;
+}
+
+.friendActions button:last-child {
+  background: var(--ks-red);
+  color: #ffffff;
+}
+
+.friendActionButton.danger:hover:not(:disabled) {
+  background: rgba(255, 90, 90, 0.2);
+  color: #ffb0b0;
+}
+
 .inviteToast {
   position: fixed;
   top: 18px;

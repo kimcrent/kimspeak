@@ -93,6 +93,27 @@ export type GuildInvitation = {
   created_at?: string;
 };
 
+export type FriendUserPreview = {
+  id: string;
+  username: string;
+  email: string;
+  avatar_url?: string | null;
+};
+
+export type Friend = FriendUserPreview & {
+  friendship_id: string;
+  friends_since?: string;
+};
+
+export type FriendRequest = {
+  id: string;
+  from_user: FriendUserPreview;
+  to_user: FriendUserPreview;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AuthResponse = {
   token?: string;
   access_token?: string;
@@ -318,6 +339,112 @@ export async function declineGuildInvitation(
   );
 
   return data.invitation;
+}
+
+export async function searchFriendUsers(
+  token: string,
+  query: string,
+): Promise<FriendUserPreview[]> {
+  const data = await request<{ users: FriendUserPreview[] }>(
+    `/friends/search?q=${encodeURIComponent(query)}`,
+    { method: "GET" },
+    token,
+  );
+
+  return data.users || [];
+}
+
+export async function listFriends(token: string): Promise<Friend[]> {
+  const data = await request<{ friends: Friend[] }>(
+    "/friends",
+    { method: "GET" },
+    token,
+  );
+
+  return data.friends || [];
+}
+
+export async function sendFriendRequest(
+  token: string,
+  username: string,
+): Promise<FriendRequest> {
+  const data = await request<{ request: FriendRequest }>(
+    "/friends/requests",
+    {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    },
+    token,
+  );
+
+  return data.request;
+}
+
+export async function listIncomingFriendRequests(
+  token: string,
+): Promise<FriendRequest[]> {
+  const data = await request<{
+    requests?: FriendRequest[];
+    reuests?: FriendRequest[];
+  }>("/friends/requests/incoming", { method: "GET" }, token);
+
+  return data.requests || data.reuests || [];
+}
+
+export async function listOutgoingFriendRequests(
+  token: string,
+): Promise<FriendRequest[]> {
+  const data = await request<{ requests: FriendRequest[] }>(
+    "/friends/requests/outgoing",
+    { method: "GET" },
+    token,
+  );
+
+  return data.requests || [];
+}
+
+export async function acceptFriendRequest(
+  token: string,
+  requestId: string,
+): Promise<void> {
+  await request<void>(
+    `/friends/requests/${requestId}/accept`,
+    { method: "POST" },
+    token,
+  );
+}
+
+export async function declineFriendRequest(
+  token: string,
+  requestId: string,
+): Promise<void> {
+  await request<void>(
+    `/friends/requests/${requestId}/decline`,
+    { method: "POST" },
+    token,
+  );
+}
+
+export async function cancelFriendRequest(
+  token: string,
+  requestId: string,
+): Promise<void> {
+  await request<void>(
+    `/friends/requests/${requestId}/cancel`,
+    { method: "POST" },
+    token,
+  );
+}
+
+export async function removeFriend(
+  token: string,
+  friendId: string,
+): Promise<void> {
+  await request<void>(
+    `/friends/${friendId}`,
+    { method: "DELETE" },
+    token,
+  );
 }
 
 export async function listChannels(token: string, guildId: string): Promise<Channel[]> {

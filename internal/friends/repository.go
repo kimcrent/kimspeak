@@ -12,7 +12,7 @@ import (
 var (
 	ErrUserNotFound         = errors.New("user not found")
 	ErrSelfRequest          = errors.New("you can't add yourself")
-	ErrAlreadyFriends       = errors.New("users are already exists")
+	ErrAlreadyFriends       = errors.New("users are already friends")
 	ErrRequestAlreadyExists = errors.New("friend request already exists")
 	ErrRequestNotFound      = errors.New("friend request not found")
 	ErrFriendshipNotFound   = errors.New("friendship not found")
@@ -189,7 +189,7 @@ func (r *Repository) SendRequest(ctx context.Context, fromUserID uuid.UUID, toUs
 	}
 
 	err = r.db.QueryRow(ctx, `
-		INSERT INTO friend_request (from_user_id, to_user_id)
+		INSERT INTO friend_requests (from_user_id, to_user_id)
 		VALUES ($1, $2)
 		RETURNING id, status, created_at, updated_at
 	`, fromUser.ID, toUser.ID).Scan(
@@ -418,7 +418,7 @@ func (r *Repository) DeclineRequest(ctx context.Context, currentUserID uuid.UUID
 func (r *Repository) CancelOutgoingRequest(ctx context.Context, currentUserID uuid.UUID, requestID uuid.UUID) error {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE friend_requests
-		SET status = ''cancelled'
+		SET status = 'cancelled',
 			updated_at = NOW()
 		WHERE id = $1
 			AND from_user_id = $2
